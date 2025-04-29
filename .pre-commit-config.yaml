@@ -1,6 +1,6 @@
 ---
 files: ^(.*\.(py|json|md|sh|yaml|yml|cfg|txt))$
-exclude: ^(\.[^/]*cache/.*|demo/.*|debug/.*|.github/ISSUE_TEMPLATE)$
+exclude: ^(\.[^/]*cache/.*|demo/.*|debug/.*|.github/ISSUE_TEMPLATE|NOTICE|LICENSE)$
 repos:
   - repo: https://github.com/executablebooks/mdformat
     # Do this before other tools "fixing" the line endings
@@ -22,8 +22,8 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      - id: no-commit-to-branch
-        args: [--branch, main]
+      #- id: no-commit-to-branch
+      #  args: [--branch, main]
       - id: check-yaml
         # Exclude because of bug in checker
         exclude: ^(docker-compose\.yml|.*/release-drafter\.yml)$

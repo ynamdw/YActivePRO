@@ -20,291 +20,705 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import socket
+# pylint: disable=too-many-lines,invalid-name
+
 import argparse
-import os
 import logging
+import os
+import socket
 import subprocess
 import sys
 
 # Set up the logger in the root of the script
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-logger = logging.getLogger('ActiveProAPI')
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger("ActiveProAPI")
 
-class ActiveProAPI:
-    def __init__(self, host='localhost', port=37800):
+
+class ActiveProAPI:  # pylint: disable=too-many-public-methods
+    """
+    A class to interact with the Active-PRO application API.
+    """
+
+    def __init__(self, host="localhost", port=37800):
         self.host = host
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.verbose = True
 
     def connect(self):
+        """
+        Connect to the Active-PRO application.
+        """
         self.socket.connect((self.host, self.port))
 
     def disconnect(self):
+        """
+        Disconnect from the Active-PRO application.
+        """
         self.socket.close()
 
     def send_command(self, command):
-        logger.info(f"Command: {command}")
-        self.socket.sendall((command + '\n').encode())
+        """
+        Send a command to the Active-PRO application.
+
+        Args:
+            command (str): The command to send.
+
+        Returns:
+            str: The response from the application.
+        """
+        logger.info("Command: %s", command)
+        self.socket.sendall((command + "\n").encode())
         response = self.socket.recv(4096).decode().strip()
-        logger.info(f"Response: {response}")
+        logger.info("Response: %s", response)
         return response
 
     def hello(self):
-        return self.send_command('Hello')
+        """
+        Send a hello command to the Active-PRO application.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("Hello")
 
     def is_connected(self):
-        return self.send_command('isConnected')
+        """
+        Check if the application is connected.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("isConnected")
 
     def start_capture(self):
-        return self.send_command('StartCapture')
+        """
+        Start capturing data.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("StartCapture")
 
     def stop_capture(self):
-        return self.send_command('StopCapture')
+        """
+        Stop capturing data.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("StopCapture")
 
     def is_capturing(self):
-        return self.send_command('isCapturing')
+        """
+        Check if the application is capturing data.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("isCapturing")
 
     def get_capture_size(self):
-        return self.send_command('GetCaptureSize')
+        """
+        Get the size of the captured data.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("GetCaptureSize")
 
     def get_capture_time(self):
-        return self.send_command('GetCaptureTime')
+        """
+        Get the capture time.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("GetCaptureTime")
 
     def get_logic(self):
-        return self.send_command('GetLogic')
+        """
+        Get the logic state.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("GetLogic")
 
     def get_ch1(self):
-        return self.send_command('GetCH1')
+        """
+        Get the state of channel 1.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("GetCH1")
 
     def get_ch2(self):
-        return self.send_command('GetCH2')
+        """
+        Get the state of channel 2.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("GetCH2")
 
     def get_ch3(self):
-        return self.send_command('GetCH3')
+        """
+        Get the state of channel 3.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("GetCH3")
 
     def set_d0_mode(self, param):
-        return self.send_command(f'SetD0Mode {param}')
+        """
+        Set the mode of D0.
+
+        Args:
+            param (int): The mode to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetD0Mode {param}")
 
     def set_d0_pwm(self, percent):
-        return self.send_command(f'SetD0PWM {percent}')
+        """
+        Set the PWM of D0.
+
+        Args:
+            percent (int): The PWM percentage to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetD0PWM {percent}")
 
     def set_d1_mode(self, param):
-        return self.send_command(f'SetD1Mode {param}')
+        """
+        Set the mode of D1.
+
+        Args:
+            param (int): The mode to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetD1Mode {param}")
 
     def set_d1_pwm(self, percent):
-        return self.send_command(f'SetD1PWM {percent}')
+        """
+        Set the PWM of D1.
+
+        Args:
+            percent (int): The PWM percentage to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetD1PWM {percent}")
 
     def set_a0_mode(self, param):
-        return self.send_command(f'SetA0Mode {param}')
+        """
+        Set the mode of A0.
+
+        Args:
+            param (int): The mode to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetA0Mode {param}")
 
     def set_a0_dc_level(self, volts):
-        return self.send_command(f'SetA0DCLEVEL {volts}')
+        """
+        Set the DC level of A0.
+
+        Args:
+            volts (float): The voltage level to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetA0DCLEVEL {volts}")
 
     def set_a1_mode(self, param):
-        return self.send_command(f'SetA1Mode {param}')
+        """
+        Set the mode of A1.
+
+        Args:
+            param (int): The mode to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetA1Mode {param}")
 
     def set_a1_dc_level(self, volts):
-        return self.send_command(f'SetA1DCLEVEL {volts}')
+        """
+        Set the DC level of A1.
+
+        Args:
+            volts (float): The voltage level to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetA1DCLEVEL {volts}")
 
     def set_a1_minimum(self, volts):
-        return self.send_command(f'SetA1MINIMUM {volts}')
+        """
+        Set the minimum voltage of A1.
+
+        Args:
+            volts (float): The minimum voltage to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetA1MINIMUM {volts}")
 
     def set_a1_maximum(self, volts):
-        return self.send_command(f'SetA1MAXIMUM {volts}')
+        """
+        Set the maximum voltage of A1.
+
+        Args:
+            volts (float): The maximum voltage to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetA1MAXIMUM {volts}")
 
     def set_a1_steps(self, steps):
-        return self.send_command(f'SetA1Steps {steps}')
+        """
+        Set the steps of A1.
+
+        Args:
+            steps (int): The number of steps to set.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"SetA1Steps {steps}")
 
     def clear_note(self):
-        return self.send_command('ClearNote')
+        """
+        Clear the note.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("ClearNote")
 
     def append_note(self, string):
-        return self.send_command(f'AppendNote {string}')
+        """
+        Append a note.
+
+        Args:
+            string (str): The note to append.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"AppendNote {string}")
 
     def set_cursor_current(self, time):
+        """
+        Set the current cursor position.
+
+        Args:
+            time (float): The time to set the cursor to.
+
+        Returns:
+            str: The response from the application.
+        """
         if time < 0:
             capture_time = float(self.get_capture_time())
             time = capture_time + time
-        return self.send_command(f'SetCursorCurrent {time}')
+        return self.send_command(f"SetCursorCurrent {time}")
 
     def set_cursor_x1(self, time):
+        """
+        Set the X1 cursor position.
+
+        Args:
+            time (float): The time to set the cursor to.
+
+        Returns:
+            str: The response from the application.
+        """
         if time < 0:
             capture_time = float(self.get_capture_time())
             time = capture_time + time
-        return self.send_command(f'SetCursorX1 {time}')
+        return self.send_command(f"SetCursorX1 {time}")
 
     def set_cursor_x2(self, time):
+        """
+        Set the X2 cursor position.
+
+        Args:
+            time (float): The time to set the cursor to.
+
+        Returns:
+            str: The response from the application.
+        """
         if time < 0:
             capture_time = float(self.get_capture_time())
             time = capture_time + time
-        return self.send_command(f'SetCursorX2 {time}')
+        return self.send_command(f"SetCursorX2 {time}")
 
     def zoom_all(self):
-        return self.send_command('ZoomAll')
+        """
+        Zoom to show all data.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("ZoomAll")
 
     def zoom_from(self, start, end):
-        return self.send_command(f'ZoomFrom {start} {end}')
+        """
+        Zoom from a start time to an end time.
+
+        Args:
+            start (float): The start time.
+            end (float): The end time.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"ZoomFrom {start} {end}")
 
     def search(self, string):
-        return self.send_command(f'Search {string}')
+        """
+        Search for a string in the data.
+
+        Args:
+            string (str): The string to search for.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(f"Search {string}")
 
     def show_inputs(self):
-        return self.send_command('ShowInputs')
+        """
+        Show the inputs.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("ShowInputs")
 
     def show_outputs(self):
-        return self.send_command('ShowOutputs')
+        """
+        Show the outputs.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("ShowOutputs")
 
     def show_list(self):
-        return self.send_command('ShowList')
+        """
+        Show the list.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("ShowList")
 
     def show_settings(self):
-        return self.send_command('ShowSettings')
+        """
+        Show the settings.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("ShowSettings")
 
     def show_notes(self):
-        return self.send_command('ShowNotes')
+        """
+        Show the notes.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("ShowNotes")
 
     def close_tabs(self):
-        return self.send_command('CloseTabs')
+        """
+        Close the tabs.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("CloseTabs")
 
     def new_capture(self):
-        return self.send_command('NewCapture')
+        """
+        Start a new capture.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("NewCapture")
 
     def open_capture(self, filename):
-        return self.send_command(f'OpenCapture {self.get_absolute_path(filename, ".active")}')
+        """
+        Open a capture file.
+
+        Args:
+            filename (str): The name of the capture file.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(
+            f'OpenCapture {self.get_absolute_path(filename, ".active")}'
+        )
 
     def save_capture(self, filename):
-        return self.send_command(f'SaveCapture {self.get_absolute_path(filename, ".active")}')
+        """
+        Save the capture to a file.
+
+        Args:
+            filename (str): The name of the file to save to.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(
+            f'SaveCapture {self.get_absolute_path(filename, ".active")}'
+        )
 
     def save_between_cursors(self, filename):
-        return self.send_command(f'SaveBetweenCursors {self.get_absolute_path(filename, ".active")}')
+        """
+        Save the data between the cursors to a file.
+
+        Args:
+            filename (str): The name of the file to save to.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(
+            f'SaveBetweenCursors {self.get_absolute_path(filename, ".active")}'
+        )
 
     def open_configuration(self, filename):
-        return self.send_command(f'OpenConfiguration {self.get_absolute_path(filename, ".active")}')
+        """
+        Open a configuration file.
+
+        Args:
+            filename (str): The name of the configuration file.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(
+            f'OpenConfiguration {self.get_absolute_path(filename, ".active")}'
+        )
 
     def save_configuration(self, filename):
-        return self.send_command(f'SaveConfiguration {self.get_absolute_path(filename, ".active")}')
+        """
+        Save the configuration to a file.
+
+        Args:
+            filename (str): The name of the file to save to.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(
+            f'SaveConfiguration {self.get_absolute_path(filename, ".active")}'
+        )
 
     def export_between_cursors(self, filename):
-        return self.send_command(f'ExportBetweenCursors {self.get_absolute_path(filename, ".csv")}')
+        """
+        Export the data between the cursors to a file.
+
+        Args:
+            filename (str): The name of the file to export to.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(
+            f'ExportBetweenCursors {self.get_absolute_path(filename, ".csv")}'
+        )
 
     def save_screenshot(self, filename):
-        return self.send_command(f'SaveScreenshot {self.get_absolute_path(filename, ".png")}')
+        """
+        Save a screenshot to a file.
+
+        Args:
+            filename (str): The name of the file to save to.
+
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command(
+            f'SaveScreenshot {self.get_absolute_path(filename, ".png")}'
+        )
 
     def exit(self):
-        return self.send_command('Exit')
+        """
+        Exit the application.
 
-    def get_absolute_path(self, path, default_extension=''):
+        Returns:
+            str: The response from the application.
+        """
+        return self.send_command("Exit")
+
+    def get_absolute_path(self, path, default_extension=""):
+        """
+        Get the absolute path of a file.
+
+        Args:
+            path (str): The path to the file.
+            default_extension (str): The default file extension.
+
+        Returns:
+            str: The absolute path of the file.
+        """
         if default_extension and not os.path.splitext(path)[1]:
             path += default_extension
-        if os.name == 'nt':
+        if os.name == "nt":
             return os.path.abspath(path)
-        elif 'CYGWIN' in os.environ:
-            result = subprocess.run(['cygpath', '-w', os.path.abspath(path)], capture_output=True, text=True)
+        if "CYGWIN" in os.environ:
+            result = subprocess.run(
+                ["cygpath", "-w", os.path.abspath(path)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
             return result.stdout.strip()
-        elif 'WSL_DISTRO_NAME' in os.environ:
-            result = subprocess.run(['wslpath', '-w', os.path.abspath(path)], capture_output=True, text=True)
+        if "WSL_DISTRO_NAME" in os.environ:
+            result = subprocess.run(
+                ["wslpath", "-w", os.path.abspath(path)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
             return result.stdout.strip()
-        else:
-            return os.path.abspath(path)
+        return os.path.abspath(path)
 
-def run_demo(api):
-    api.hello()
-    api.is_connected()
-    api.show_inputs()
-    api.show_list()
-    api.show_settings()
-    api.show_notes()
-    api.show_outputs()
-    api.close_tabs()
-    api.set_d0_mode(0)
-    api.set_d0_mode(1)
-    api.set_d0_mode(2)
-    api.set_d0_mode(3)
-    api.set_d0_pwm(25)
-    api.set_d0_pwm(75)
-    api.set_d1_mode(0)
-    api.set_d1_mode(1)
-    api.set_d1_mode(2)
-    api.set_d1_mode(3)
-    api.set_d1_pwm(25)
-    api.set_d1_pwm(75)
-    api.set_a0_mode(0)
-    api.set_a0_mode(1)
-    api.set_a0_mode(2)
-    api.set_a0_mode(3)
-    api.set_a0_mode(4)
-    api.set_a0_mode(5)
-    api.set_a0_mode(6)
-    api.set_a0_dc_level(0.5)
-    api.set_a0_dc_level(1.5)
-    api.set_a0_dc_level(2.5)
-    api.set_a1_mode(1)
-    api.set_a1_mode(2)
-    api.set_a1_mode(3)
-    api.set_a1_mode(4)
-    api.set_a1_mode(6)
-    api.set_a1_dc_level(0.5)
-    api.set_a1_dc_level(1.5)
-    api.set_a1_mode(7)
-    api.set_a1_minimum(0.5)
-    api.set_a1_maximum(2.5)
-    api.set_a1_mode(8)
-    api.set_a1_mode(9)
-    api.set_a1_mode(10)
-    api.set_a1_steps(4000)
-    api.set_a1_steps(500)
-    api.is_capturing()
-    api.start_capture()
-    api.get_logic()
-    api.get_ch1()
-    api.get_ch2()
-    api.get_ch3()
-    api.stop_capture()
-    api.get_capture_size()
-    api.get_capture_time()
-    api.show_notes()
-    api.clear_note()
-    api.append_note('Sent to the Active-Pro Application.')
-    api.append_note('')
-    api.append_note('And here is more data.')
-    api.zoom_all()
-    api.zoom_from(1.0, 2.0)
-    api.set_cursor_current(1)
-    api.search('mon')
-    api.search('booga')
-    api.set_cursor_current(3)
-    api.set_cursor_x1(0)
-    api.set_cursor_x2(5.0)
-    api.export_between_cursors('test')
-    api.save_capture('testsave')
-    api.save_between_cursors('testsavebetweencursors')
-    api.save_configuration('testsaveconfig')
-    api.open_configuration('testsaveconfig')
-    api.save_screenshot('testclosed')
-    api.new_capture()
-    api.open_capture('testsave')
-    api.exit()
+
+def run_demo(api_instance):  # pylint: disable=too-many-statements
+    """
+    Run a demonstration of the API.
+
+    Args:
+        api_instance (ActiveProAPI): An instance of the ActiveProAPI class.
+    """
+    api_instance.hello()
+    api_instance.is_connected()
+    api_instance.show_inputs()
+    api_instance.show_list()
+    api_instance.show_settings()
+    api_instance.show_notes()
+    api_instance.show_outputs()
+    api_instance.close_tabs()
+    api_instance.set_d0_mode(0)
+    api_instance.set_d0_mode(1)
+    api_instance.set_d0_mode(2)
+    api_instance.set_d0_mode(3)
+    api_instance.set_d0_pwm(25)
+    api_instance.set_d0_pwm(75)
+    api_instance.set_d1_mode(0)
+    api_instance.set_d1_mode(1)
+    api_instance.set_d1_mode(2)
+    api_instance.set_d1_mode(3)
+    api_instance.set_d1_pwm(25)
+    api_instance.set_d1_pwm(75)
+    api_instance.set_a0_mode(0)
+    api_instance.set_a0_mode(1)
+    api_instance.set_a0_mode(2)
+    api_instance.set_a0_mode(3)
+    api_instance.set_a0_mode(4)
+    api_instance.set_a0_mode(5)
+    api_instance.set_a0_mode(6)
+    api_instance.set_a0_dc_level(0.5)
+    api_instance.set_a0_dc_level(1.5)
+    api_instance.set_a0_dc_level(2.5)
+    api_instance.set_a1_mode(1)
+    api_instance.set_a1_mode(2)
+    api_instance.set_a1_mode(3)
+    api_instance.set_a1_mode(4)
+    api_instance.set_a1_mode(6)
+    api_instance.set_a1_dc_level(0.5)
+    api_instance.set_a1_dc_level(1.5)
+    api_instance.set_a1_mode(7)
+    api_instance.set_a1_minimum(0.5)
+    api_instance.set_a1_maximum(2.5)
+    api_instance.set_a1_mode(8)
+    api_instance.set_a1_mode(9)
+    api_instance.set_a1_mode(10)
+    api_instance.set_a1_steps(4000)
+    api_instance.set_a1_steps(500)
+    api_instance.is_capturing()
+    api_instance.start_capture()
+    api_instance.get_logic()
+    api_instance.get_ch1()
+    api_instance.get_ch2()
+    api_instance.get_ch3()
+    api_instance.stop_capture()
+    api_instance.get_capture_size()
+    api_instance.get_capture_time()
+    api_instance.show_notes()
+    api_instance.clear_note()
+    api_instance.append_note("Sent to the Active-Pro Application.")
+    api_instance.append_note("")
+    api_instance.append_note("And here is more data.")
+    api_instance.zoom_all()
+    api_instance.zoom_from(1.0, 2.0)
+    api_instance.set_cursor_current(1)
+    api_instance.search("mon")
+    api_instance.search("booga")
+    api_instance.set_cursor_current(3)
+    api_instance.set_cursor_x1(0)
+    api_instance.set_cursor_x2(5.0)
+    api_instance.export_between_cursors("test")
+    api_instance.save_capture("testsave")
+    api_instance.save_between_cursors("testsavebetweencursors")
+    api_instance.save_configuration("testsaveconfig")
+    api_instance.open_configuration("testsaveconfig")
+    api_instance.save_screenshot("testclosed")
+    api_instance.new_capture()
+    api_instance.open_capture("testsave")
+    api_instance.exit()
+
 
 def generate_bash_completion():
-    completion_script = '''
+    """
+    Generate a bash completion script for the API.
+    """
+    completion_script = """
 _active_pro_api_completion() {
     local cur prev words cword
     _init_completion || return
 
     local commands=(
-        --hello --is-connected --start-capture --stop-capture --is-capturing --get-capture-size --get-capture-time
-        --get-logic --get-ch1 --get-ch2 --get-ch3 --set-d0-mode --set-d0-pwm --set-d1-mode --set-d1-pwm --set-a0-mode
-        --set-a0-dc-level --set-a1-mode --set-a1-dc-level --set-a1-minimum --set-a1-maximum --set-a1-steps
-        --clear-note --append-note --set-cursor-current --set-cursor-x1 --set-cursor-x2 --zoom-all --zoom-from
-        --search --show-inputs --show-outputs --show-list --show-settings --show-notes --close-tabs --new-capture
-        --open-capture --save-capture --save-between-cursors --open-configuration --save-configuration
-        --export-between-cursors --save-screenshot --exit --generate-bash-completion --quiet -q
+        --hello --is-connected --start-capture --stop-capture --is-capturing
+        --get-capture-size --get-capture-time --get-logic --get-ch1 --get-ch2
+        --get-ch3 --set-d0-mode --set-d0-pwm --set-d1-mode --set-d1-pwm
+        --set-a0-mode --set-a0-dc-level --set-a1-mode --set-a1-dc-level
+        --set-a1-minimum --set-a1-maximum --set-a1-steps --clear-note
+        --append-note --set-cursor-current --set-cursor-x1 --set-cursor-x2
+        --zoom-all --zoom-from --search --show-inputs --show-outputs
+        --show-list --show-settings --show-notes --close-tabs --new-capture
+        --open-capture --save-capture --save-between-cursors
+        --open-configuration --save-configuration --export-between-cursors
+        --save-screenshot --exit --generate-bash-completion --quiet -q
     )
 
     local file_commands=(
-        --open-capture --save-capture --save-between-cursors --open-configuration --save-configuration
+        --open-capture --save-capture --save-between-cursors
+        --open-configuration --save-configuration
         --export-between-cursors --save-screenshot
     )
 
@@ -323,73 +737,171 @@ _active_pro_api_completion() {
     return 0
 }
 
-complete -F _active_pro_api_completion ActiveProApi.py
-complete -F _active_pro_api_completion ./ActiveProApi.py
-'''
+complete -F _active_pro_api_completion active_pro_api.py
+complete -F _active_pro_api_completion ./active_pro_api.py
+"""
     print(completion_script)
+
 
 # Demonstration code
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='ActivePro API Client')
-    parser.add_argument('--demo', action='store_true', help='Run the demonstration code')
-    parser.add_argument('--export-between-cursors', metavar='FILE', help='Export data between cursors to a file')
-    parser.add_argument('--save-capture', metavar='FILE', help='Save capture to a file')
-    parser.add_argument('--save-between-cursors', metavar='FILE', help='Save data between cursors to a file')
-    parser.add_argument('--open-configuration', metavar='FILE', help='Open configuration from a file')
-    parser.add_argument('--save-configuration', metavar='FILE', help='Save configuration to a file')
-    parser.add_argument('--save-screenshot', metavar='FILE', help='Save screenshot to a file')
-    parser.add_argument('--open-capture', metavar='FILE', help='Open capture from a file')
-    parser.add_argument('--generate-bash-completion', action='store_true', help='Generate bash completion script.  To use, source the output of this command in your shell: source <(ActiveProApi.py --generate-bash-completion)')
-    parser.add_argument('--set-d0-mode', metavar='PARAM', type=int, help='Set D0 mode')
-    parser.add_argument('--set-d0-pwm', metavar='PERCENT', type=int, help='Set D0 PWM')
-    parser.add_argument('--set-d1-mode', metavar='PARAM', type=int, help='Set D1 mode')
-    parser.add_argument('--set-d1-pwm', metavar='PERCENT', type=int, help='Set D1 PWM')
-    parser.add_argument('--set-a0-mode', metavar='PARAM', type=int, help='Set A0 mode')
-    parser.add_argument('--set-a0-dc-level', metavar='VOLTS', type=float, help='Set A0 DC level')
-    parser.add_argument('--set-a1-mode', metavar='PARAM', type=int, help='Set A1 mode')
-    parser.add_argument('--set-a1-dc-level', metavar='VOLTS', type=float, help='Set A1 DC level')
-    parser.add_argument('--set-a1-minimum', metavar='VOLTS', type=float, help='Set A1 minimum')
-    parser.add_argument('--set-a1-maximum', metavar='VOLTS', type=float, help='Set A1 maximum')
-    parser.add_argument('--set-a1-steps', metavar='STEPS', type=int, help='Set A1 steps')
-    parser.add_argument('--append-note', metavar='STRING', help='Append note')
-    parser.add_argument('--set-cursor-current', metavar='TIME', type=float, help='Set cursor current')
-    parser.add_argument('--set-cursor-x1', metavar='TIME', type=float, help='Set cursor X1')
-    parser.add_argument('--set-cursor-x2', metavar='TIME', type=float, help='Set cursor X2')
-    parser.add_argument('--zoom-from', metavar=('START', 'END'), type=float, nargs=2, help='Zoom from start to end')
-    parser.add_argument('--search', metavar='STRING', help='Search')
-    parser.add_argument('--quiet', '-q', action='store_true', help='Disable verbosity')
-    parser.add_argument('--get-capture-size', action='store_true', help='Get capture size')
-    parser.add_argument('--get-capture-time', action='store_true', help='Get capture time')
-    parser.add_argument('--get-logic', action='store_true', help='Get logic')
-    parser.add_argument('--get-ch1', action='store_true', help='Get channel 1')
-    parser.add_argument('--get-ch2', action='store_true', help='Get channel 2')
-    parser.add_argument('--get-ch3', action='store_true', help='Get channel 3')
-    parser.add_argument('--hello', action='store_true', help='Send hello command')
-    parser.add_argument('--is-connected', action='store_true', help='Check if connected')
-    parser.add_argument('--start-capture', action='store_true', help='Start capture')
-    parser.add_argument('--stop-capture', action='store_true', help='Stop capture')
-    parser.add_argument('--is-capturing', action='store_true', help='Check if capturing')
-    parser.add_argument('--clear-note', action='store_true', help='Clear note')
-    parser.add_argument('--zoom-all', action='store_true', help='Zoom all')
-    parser.add_argument('--show-inputs', action='store_true', help='Show inputs')
-    parser.add_argument('--show-outputs', action='store_true', help='Show outputs')
-    parser.add_argument('--show-list', action='store_true', help='Show list')
-    parser.add_argument('--show-settings', action='store_true', help='Show settings')
-    parser.add_argument('--show-notes', action='store_true', help='Show notes')
-    parser.add_argument('--close-tabs', action='store_true', help='Close tabs')
-    parser.add_argument('--new-capture', action='store_true', help='New capture')
-    parser.add_argument('--exit', action='store_true', help='Exit')
+    parser = argparse.ArgumentParser(description="ActivePro API Client")
+    parser.add_argument(
+        "--demo", action="store_true", help="Run the demonstration code"
+    )
+    parser.add_argument(
+        "--export-between-cursors",
+        metavar="FILE",
+        help="Export data between cursors to a file",
+    )
+    parser.add_argument(
+        "--save-capture", metavar="FILE", help="Save capture to a file"
+    )
+    parser.add_argument(
+        "--save-between-cursors",
+        metavar="FILE",
+        help="Save data between cursors to a file",
+    )
+    parser.add_argument(
+        "--open-configuration",
+        metavar="FILE",
+        help="Open configuration from a file",
+    )
+    parser.add_argument(
+        "--save-configuration",
+        metavar="FILE",
+        help="Save configuration to a file",
+    )
+    parser.add_argument(
+        "--save-screenshot", metavar="FILE", help="Save screenshot to a file"
+    )
+    parser.add_argument(
+        "--open-capture", metavar="FILE", help="Open capture from a file"
+    )
+    parser.add_argument(
+        "--generate-bash-completion",
+        action="store_true",
+        help="Generate bash completion script. To use, source the output of "
+        "this command in your shell: source <(active_pro_api.py "
+        "--generate-bash-completion)",
+    )
+    parser.add_argument(
+        "--set-d0-mode", metavar="PARAM", type=int, help="Set D0 mode"
+    )
+    parser.add_argument(
+        "--set-d0-pwm", metavar="PERCENT", type=int, help="Set D0 PWM"
+    )
+    parser.add_argument(
+        "--set-d1-mode", metavar="PARAM", type=int, help="Set D1 mode"
+    )
+    parser.add_argument(
+        "--set-d1-pwm", metavar="PERCENT", type=int, help="Set D1 PWM"
+    )
+    parser.add_argument(
+        "--set-a0-mode", metavar="PARAM", type=int, help="Set A0 mode"
+    )
+    parser.add_argument(
+        "--set-a0-dc-level",
+        metavar="VOLTS",
+        type=float,
+        help="Set A0 DC level",
+    )
+    parser.add_argument(
+        "--set-a1-mode", metavar="PARAM", type=int, help="Set A1 mode"
+    )
+    parser.add_argument(
+        "--set-a1-dc-level",
+        metavar="VOLTS",
+        type=float,
+        help="Set A1 DC level",
+    )
+    parser.add_argument(
+        "--set-a1-minimum", metavar="VOLTS", type=float, help="Set A1 minimum"
+    )
+    parser.add_argument(
+        "--set-a1-maximum", metavar="VOLTS", type=float, help="Set A1 maximum"
+    )
+    parser.add_argument(
+        "--set-a1-steps", metavar="STEPS", type=int, help="Set A1 steps"
+    )
+    parser.add_argument("--append-note", metavar="STRING", help="Append note")
+    parser.add_argument(
+        "--set-cursor-current",
+        metavar="TIME",
+        type=float,
+        help="Set cursor current",
+    )
+    parser.add_argument(
+        "--set-cursor-x1", metavar="TIME", type=float, help="Set cursor X1"
+    )
+    parser.add_argument(
+        "--set-cursor-x2", metavar="TIME", type=float, help="Set cursor X2"
+    )
+    parser.add_argument(
+        "--zoom-from",
+        metavar=("START", "END"),
+        type=float,
+        nargs=2,
+        help="Zoom from start to end",
+    )
+    parser.add_argument("--search", metavar="STRING", help="Search")
+    parser.add_argument(
+        "--quiet", "-q", action="store_true", help="Disable verbosity"
+    )
+    parser.add_argument(
+        "--get-capture-size", action="store_true", help="Get capture size"
+    )
+    parser.add_argument(
+        "--get-capture-time", action="store_true", help="Get capture time"
+    )
+    parser.add_argument("--get-logic", action="store_true", help="Get logic")
+    parser.add_argument("--get-ch1", action="store_true", help="Get channel 1")
+    parser.add_argument("--get-ch2", action="store_true", help="Get channel 2")
+    parser.add_argument("--get-ch3", action="store_true", help="Get channel 3")
+    parser.add_argument(
+        "--hello", action="store_true", help="Send hello command"
+    )
+    parser.add_argument(
+        "--is-connected", action="store_true", help="Check if connected"
+    )
+    parser.add_argument(
+        "--start-capture", action="store_true", help="Start capture"
+    )
+    parser.add_argument(
+        "--stop-capture", action="store_true", help="Stop capture"
+    )
+    parser.add_argument(
+        "--is-capturing", action="store_true", help="Check if capturing"
+    )
+    parser.add_argument("--clear-note", action="store_true", help="Clear note")
+    parser.add_argument("--zoom-all", action="store_true", help="Zoom all")
+    parser.add_argument(
+        "--show-inputs", action="store_true", help="Show inputs"
+    )
+    parser.add_argument(
+        "--show-outputs", action="store_true", help="Show outputs"
+    )
+    parser.add_argument("--show-list", action="store_true", help="Show list")
+    parser.add_argument(
+        "--show-settings", action="store_true", help="Show settings"
+    )
+    parser.add_argument("--show-notes", action="store_true", help="Show notes")
+    parser.add_argument("--close-tabs", action="store_true", help="Close tabs")
+    parser.add_argument(
+        "--new-capture", action="store_true", help="New capture"
+    )
+    parser.add_argument("--exit", action="store_true", help="Exit")
     args = parser.parse_args()
 
     if args.generate_bash_completion:
         generate_bash_completion()
-        exit(0)
+        sys.exit(0)
 
     # Check if at least one argument is provided
     if len(sys.argv) == 1:
         parser.print_help()
         logger.error("\nAt least one argument is needed")
-        exit(1)
+        sys.exit(1)
 
     try:
 
@@ -555,6 +1067,6 @@ if __name__ == "__main__":
             api.exit()
 
         api.disconnect()
-    except Exception as e:
-        logger.error(f"\nException: {e}")
-        exit(1)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("\nException: %s", e)
+        sys.exit(1)

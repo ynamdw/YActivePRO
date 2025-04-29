@@ -364,6 +364,21 @@ if __name__ == "__main__":
     parser.add_argument('--get-ch1', action='store_true', help='Get channel 1')
     parser.add_argument('--get-ch2', action='store_true', help='Get channel 2')
     parser.add_argument('--get-ch3', action='store_true', help='Get channel 3')
+    parser.add_argument('--hello', action='store_true', help='Send hello command')
+    parser.add_argument('--is-connected', action='store_true', help='Check if connected')
+    parser.add_argument('--start-capture', action='store_true', help='Start capture')
+    parser.add_argument('--stop-capture', action='store_true', help='Stop capture')
+    parser.add_argument('--is-capturing', action='store_true', help='Check if capturing')
+    parser.add_argument('--clear-note', action='store_true', help='Clear note')
+    parser.add_argument('--zoom-all', action='store_true', help='Zoom all')
+    parser.add_argument('--show-inputs', action='store_true', help='Show inputs')
+    parser.add_argument('--show-outputs', action='store_true', help='Show outputs')
+    parser.add_argument('--show-list', action='store_true', help='Show list')
+    parser.add_argument('--show-settings', action='store_true', help='Show settings')
+    parser.add_argument('--show-notes', action='store_true', help='Show notes')
+    parser.add_argument('--close-tabs', action='store_true', help='Close tabs')
+    parser.add_argument('--new-capture', action='store_true', help='New capture')
+    parser.add_argument('--exit', action='store_true', help='Exit')
     args = parser.parse_args()
 
     if args.generate_bash_completion:
@@ -493,6 +508,51 @@ if __name__ == "__main__":
 
         if args.set_a1_steps is not None:
             api.set_a1_steps(args.set_a1_steps)
+
+        if args.hello:
+            api.hello()
+
+        if args.is_connected:
+            api.is_connected()
+
+        if args.start_capture:
+            api.start_capture()
+
+        if args.stop_capture:
+            api.stop_capture()
+
+        if args.is_capturing:
+            api.is_capturing()
+
+        if args.clear_note:
+            api.clear_note()
+
+        if args.zoom_all:
+            api.zoom_all()
+
+        if args.show_inputs:
+            api.show_inputs()
+
+        if args.show_outputs:
+            api.show_outputs()
+
+        if args.show_list:
+            api.show_list()
+
+        if args.show_settings:
+            api.show_settings()
+
+        if args.show_notes:
+            api.show_notes()
+
+        if args.close_tabs:
+            api.close_tabs()
+
+        if args.new_capture:
+            api.new_capture()
+
+        if args.exit:
+            api.exit()
 
         api.disconnect()
     except Exception as e:

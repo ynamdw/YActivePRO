@@ -1050,6 +1050,9 @@ if __name__ == "__main__":
         if parsed_args.save_between_cursors:
             api.save_between_cursors(parsed_args.save_between_cursors)
 
+        if parsed_args.export_between_cursors:
+            api.export_between_cursors(parsed_args.export_between_cursors)
+
         if parsed_args.save_configuration:
             api.save_configuration(parsed_args.save_configuration)
 

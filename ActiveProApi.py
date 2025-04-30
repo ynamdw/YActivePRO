@@ -29,9 +29,47 @@ import socket
 import subprocess
 import sys
 
+
+class CustomFormatter(logging.Formatter):
+    """
+    Custom formatter for logging messages.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.first_message = True
+
+    def format(self, record):
+        # Access to a protected member _fmt of a client class
+        # pylint: disable=protected-access
+        if record.levelno == logging.INFO:
+            self._style._fmt = "%(message)s"
+        else:
+            self._style._fmt = "%(levelname)s: %(message)s"
+
+        if self.first_message:
+            self.first_message = False
+            return "\n" + super().format(record)
+
+        return super().format(record)
+
+
 # Set up the logger in the root of the script
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("ActiveProAPI")
+logger.setLevel(logging.INFO)
+
+# Create a console handler
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# Create the custom formatter
+formatter = CustomFormatter()
+
+# Set the formatter for the handler
+ch.setFormatter(formatter)
+
+# Add the handler to the logger
+logger.addHandler(ch)
 
 
 class ActiveProAPI:  # pylint: disable=too-many-public-methods
@@ -757,7 +795,7 @@ complete -F _active_pro_api_completion {script_name}
 complete -F _active_pro_api_completion ./{script_name}
 complete -F _active_pro_api_completion {script_path}
 """
-    print(completion_script)
+    logger.info(completion_script)
 
 
 # Demonstration code
@@ -908,16 +946,16 @@ if __name__ == "__main__":
         "--new-capture", action="store_true", help="New capture"
     )
     parser.add_argument("--exit", action="store_true", help="Exit")
-    args = parser.parse_args()
+    parsed_args = parser.parse_args()
 
-    if args.generate_bash_completion:
+    if parsed_args.generate_bash_completion:
         generate_bash_completion(parser)
         sys.exit(0)
 
     # Check if at least one argument is provided
     if len(sys.argv) == 1:
         parser.print_help()
-        logger.error("\nAt least one argument is needed")
+        logger.log(logging.ERROR, "At least one argument is needed")
         sys.exit(1)
 
     try:
@@ -925,165 +963,165 @@ if __name__ == "__main__":
         api = ActiveProAPI()
         api.connect()
 
-        if args.demo:
+        if parsed_args.demo:
             run_demo(api)
 
         # Save old configuration first before loading configurations
-        if args.save_configuration:
-            api.save_configuration(args.save_configuration)
+        if parsed_args.save_configuration:
+            api.save_configuration(parsed_args.save_configuration)
 
         # Arguments that impact configuration
 
-        if args.append_note is not None:
-            api.append_note(args.append_note)
+        if parsed_args.append_note is not None:
+            api.append_note(parsed_args.append_note)
 
-        if args.set_cursor_current is not None:
-            api.set_cursor_current(args.set_cursor_current)
+        if parsed_args.set_cursor_current is not None:
+            api.set_cursor_current(parsed_args.set_cursor_current)
 
-        if args.set_cursor_x1 is not None:
-            api.set_cursor_x1(args.set_cursor_x1)
+        if parsed_args.set_cursor_x1 is not None:
+            api.set_cursor_x1(parsed_args.set_cursor_x1)
 
-        if args.set_cursor_x2 is not None:
-            api.set_cursor_x2(args.set_cursor_x2)
+        if parsed_args.set_cursor_x2 is not None:
+            api.set_cursor_x2(parsed_args.set_cursor_x2)
 
-        if args.zoom_from is not None:
-            api.zoom_from(args.zoom_from[0], args.zoom_from[1])
+        if parsed_args.zoom_from is not None:
+            api.zoom_from(parsed_args.zoom_from[0], parsed_args.zoom_from[1])
 
-        if args.search is not None:
-            api.search(args.search)
+        if parsed_args.search is not None:
+            api.search(parsed_args.search)
 
-        if args.get_capture_size:
+        if parsed_args.get_capture_size:
             api.get_capture_size()
 
-        if args.get_capture_time:
+        if parsed_args.get_capture_time:
             api.get_capture_time()
 
-        if args.get_logic:
+        if parsed_args.get_logic:
             api.get_logic()
 
-        if args.get_ch1:
+        if parsed_args.get_ch1:
             api.get_ch1()
 
-        if args.get_ch2:
+        if parsed_args.get_ch2:
             api.get_ch2()
 
-        if args.get_ch3:
+        if parsed_args.get_ch3:
             api.get_ch3()
 
         # Save operations first before loading configurations
-        if args.save_capture:
-            api.save_capture(args.save_capture)
+        if parsed_args.save_capture:
+            api.save_capture(parsed_args.save_capture)
 
-        if args.save_between_cursors:
-            api.save_between_cursors(args.save_between_cursors)
+        if parsed_args.save_between_cursors:
+            api.save_between_cursors(parsed_args.save_between_cursors)
 
-        if args.save_configuration:
-            api.save_configuration(args.save_configuration)
+        if parsed_args.save_configuration:
+            api.save_configuration(parsed_args.save_configuration)
 
-        if args.save_screenshot:
-            api.save_screenshot(args.save_screenshot)
+        if parsed_args.save_screenshot:
+            api.save_screenshot(parsed_args.save_screenshot)
 
         # Save our capture before restarting
 
-        if args.save_capture:
-            api.save_capture(args.save_capture)
+        if parsed_args.save_capture:
+            api.save_capture(parsed_args.save_capture)
 
-        if args.save_between_cursors:
-            api.save_between_cursors(args.save_between_cursors)
+        if parsed_args.save_between_cursors:
+            api.save_between_cursors(parsed_args.save_between_cursors)
 
-        if args.save_screenshot:
-            api.save_screenshot(args.save_screenshot)
+        if parsed_args.save_screenshot:
+            api.save_screenshot(parsed_args.save_screenshot)
 
-        if args.export_between_cursors:
-            api.export_between_cursors(args.export_between_cursors)
+        if parsed_args.export_between_cursors:
+            api.export_between_cursors(parsed_args.export_between_cursors)
 
         # Read/Open operations next
-        if args.open_configuration:
-            api.open_configuration(args.open_configuration)
+        if parsed_args.open_configuration:
+            api.open_configuration(parsed_args.open_configuration)
 
-        if args.open_capture:
-            api.open_capture(args.open_capture)
+        if parsed_args.open_capture:
+            api.open_capture(parsed_args.open_capture)
 
         # Configuration operations
-        if args.set_d0_mode is not None:
-            api.set_d0_mode(args.set_d0_mode)
+        if parsed_args.set_d0_mode is not None:
+            api.set_d0_mode(parsed_args.set_d0_mode)
 
-        if args.set_d0_pwm is not None:
-            api.set_d0_pwm(args.set_d0_pwm)
+        if parsed_args.set_d0_pwm is not None:
+            api.set_d0_pwm(parsed_args.set_d0_pwm)
 
-        if args.set_d1_mode is not None:
-            api.set_d1_mode(args.set_d1_mode)
+        if parsed_args.set_d1_mode is not None:
+            api.set_d1_mode(parsed_args.set_d1_mode)
 
-        if args.set_d1_pwm is not None:
-            api.set_d1_pwm(args.set_d1_pwm)
+        if parsed_args.set_d1_pwm is not None:
+            api.set_d1_pwm(parsed_args.set_d1_pwm)
 
-        if args.set_a0_mode is not None:
-            api.set_a0_mode(args.set_a0_mode)
+        if parsed_args.set_a0_mode is not None:
+            api.set_a0_mode(parsed_args.set_a0_mode)
 
-        if args.set_a0_dc_level is not None:
-            api.set_a0_dc_level(args.set_a0_dc_level)
+        if parsed_args.set_a0_dc_level is not None:
+            api.set_a0_dc_level(parsed_args.set_a0_dc_level)
 
-        if args.set_a1_mode is not None:
-            api.set_a1_mode(args.set_a1_mode)
+        if parsed_args.set_a1_mode is not None:
+            api.set_a1_mode(parsed_args.set_a1_mode)
 
-        if args.set_a1_dc_level is not None:
-            api.set_a1_dc_level(args.set_a1_dc_level)
+        if parsed_args.set_a1_dc_level is not None:
+            api.set_a1_dc_level(parsed_args.set_a1_dc_level)
 
-        if args.set_a1_minimum is not None:
-            api.set_a1_minimum(args.set_a1_minimum)
+        if parsed_args.set_a1_minimum is not None:
+            api.set_a1_minimum(parsed_args.set_a1_minimum)
 
-        if args.set_a1_maximum is not None:
-            api.set_a1_maximum(args.set_a1_maximum)
+        if parsed_args.set_a1_maximum is not None:
+            api.set_a1_maximum(parsed_args.set_a1_maximum)
 
-        if args.set_a1_steps is not None:
-            api.set_a1_steps(args.set_a1_steps)
+        if parsed_args.set_a1_steps is not None:
+            api.set_a1_steps(parsed_args.set_a1_steps)
 
-        if args.hello:
+        if parsed_args.hello:
             api.hello()
 
-        if args.is_connected:
+        if parsed_args.is_connected:
             api.is_connected()
 
-        if args.start_capture:
+        if parsed_args.start_capture:
             api.start_capture()
 
-        if args.stop_capture:
+        if parsed_args.stop_capture:
             api.stop_capture()
 
-        if args.is_capturing:
+        if parsed_args.is_capturing:
             api.is_capturing()
 
-        if args.clear_note:
+        if parsed_args.clear_note:
             api.clear_note()
 
-        if args.zoom_all:
+        if parsed_args.zoom_all:
             api.zoom_all()
 
-        if args.show_inputs:
+        if parsed_args.show_inputs:
             api.show_inputs()
 
-        if args.show_outputs:
+        if parsed_args.show_outputs:
             api.show_outputs()
 
-        if args.show_list:
+        if parsed_args.show_list:
             api.show_list()
 
-        if args.show_settings:
+        if parsed_args.show_settings:
             api.show_settings()
 
-        if args.show_notes:
+        if parsed_args.show_notes:
             api.show_notes()
 
-        if args.close_tabs:
+        if parsed_args.close_tabs:
             api.close_tabs()
 
-        if args.new_capture:
+        if parsed_args.new_capture:
             api.new_capture()
 
-        if args.exit:
+        if parsed_args.exit:
             api.exit()
 
         api.disconnect()
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("\nException: %s", e)
+        logger.log(logging.ERROR, "Exception: %s", e)
         sys.exit(1)

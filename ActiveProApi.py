@@ -693,52 +693,69 @@ def run_demo(api_instance):  # pylint: disable=too-many-statements
     api_instance.exit()
 
 
-def generate_bash_completion():
+def generate_bash_completion(argparser):
     """
     Generate a bash completion script for the API.
     """
-    completion_script = """
-_active_pro_api_completion() {
+    script_name = os.path.basename(__file__)
+    script_path = os.path.abspath(__file__)
+
+    commands = []
+    file_commands = []
+
+    for action in argparser._actions:  # pylint: disable=protected-access
+        if action.option_strings:
+            command = " ".join(action.option_strings)
+            if action.nargs == 0:
+                commands.append(command)
+            elif action.nargs == 1:
+                commands.append(f"{command} VALUE")
+            elif action.nargs == 2:
+                commands.append(f"{command} VALUE1 VALUE2")
+            if (
+                action.metavar
+                and isinstance(action.metavar, str)
+                and action.metavar.endswith("FILE")
+            ):
+                file_commands.append(command)
+
+    completion_script = f"""
+_active_pro_api_completion() {{
     local cur prev words cword
     _init_completion || return
 
     local commands=(
-        --hello --is-connected --start-capture --stop-capture --is-capturing
-        --get-capture-size --get-capture-time --get-logic --get-ch1 --get-ch2
-        --get-ch3 --set-d0-mode --set-d0-pwm --set-d1-mode --set-d1-pwm
-        --set-a0-mode --set-a0-dc-level --set-a1-mode --set-a1-dc-level
-        --set-a1-minimum --set-a1-maximum --set-a1-steps --clear-note
-        --append-note --set-cursor-current --set-cursor-x1 --set-cursor-x2
-        --zoom-all --zoom-from --search --show-inputs --show-outputs
-        --show-list --show-settings --show-notes --close-tabs --new-capture
-        --open-capture --save-capture --save-between-cursors
-        --open-configuration --save-configuration --export-between-cursors
-        --save-screenshot --exit --generate-bash-completion --quiet -q
+        {" ".join(commands)}
     )
 
     local file_commands=(
-        --open-capture --save-capture --save-between-cursors
-        --open-configuration --save-configuration
-        --export-between-cursors --save-screenshot
+        {" ".join(file_commands)}
     )
 
-    if [[ ${#words[@]} -eq 2 ]]; then
-        COMPREPLY=( $(compgen -W "${commands[*]}" -- ${cur}) )
+    if [[ ${{#words[@]}} -eq 2 ]]; then
+        COMPREPLY=( $(compgen -W "${{commands[*]}}" -- ${{cur}}) )
         return 0
-    elif [[ ${#words[@]} -eq 3 ]]; then
-        prev=${words[1]}
-        if [[ " ${file_commands[*]} " =~ " ${prev} " ]]; then
+    elif [[ ${{#words[@]}} -eq 3 ]]; then
+        prev=${{words[1]}}
+        if [[ " ${{file_commands[*]}} " =~ " ${{prev}} " ]]; then
             _filedir
+            return 0
+        fi
+    elif [[ ${{#words[@]}} -eq 4 ]]; then
+        prev=${{words[1]}}
+        if [[ " ${{commands[*]}} " =~ " ${{prev}} " ]]; then
+            COMPREPLY=( $(compgen -W "VALUE1 VALUE2" -- ${{cur}}) )
             return 0
         fi
     fi
 
-    COMPREPLY=( $(compgen -W "${commands[*]}" -- ${cur}) )
+    COMPREPLY=( $(compgen -W "${{commands[*]}}" -- ${{cur}}) )
     return 0
-}
+}}
 
-complete -F _active_pro_api_completion active_pro_api.py
-complete -F _active_pro_api_completion ./active_pro_api.py
+complete -F _active_pro_api_completion {script_name}
+complete -F _active_pro_api_completion ./{script_name}
+complete -F _active_pro_api_completion {script_path}
 """
     print(completion_script)
 
@@ -781,8 +798,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--generate-bash-completion",
         action="store_true",
-        help="Generate bash completion script. To use, source the output of "
-        "this command in your shell: source <(active_pro_api.py "
+        help=f"Generate bash completion script. To use, source the output of "
+        f"this command in your shell: source <({sys.argv[0]} "
         "--generate-bash-completion)",
     )
     parser.add_argument(
@@ -894,7 +911,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.generate_bash_completion:
-        generate_bash_completion()
+        generate_bash_completion(parser)
         sys.exit(0)
 
     # Check if at least one argument is provided

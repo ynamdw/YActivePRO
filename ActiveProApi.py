@@ -1043,7 +1043,7 @@ if __name__ == "__main__":
         if parsed_args.get_ch3:
             api.get_ch3()
 
-        # Save operations first before loading configurations
+        # Save operations first before loading configurations or restart
         if parsed_args.save_capture:
             api.save_capture(parsed_args.save_capture)
 
@@ -1055,20 +1055,6 @@ if __name__ == "__main__":
 
         if parsed_args.save_screenshot:
             api.save_screenshot(parsed_args.save_screenshot)
-
-        # Save our capture before restarting
-
-        if parsed_args.save_capture:
-            api.save_capture(parsed_args.save_capture)
-
-        if parsed_args.save_between_cursors:
-            api.save_between_cursors(parsed_args.save_between_cursors)
-
-        if parsed_args.save_screenshot:
-            api.save_screenshot(parsed_args.save_screenshot)
-
-        if parsed_args.export_between_cursors:
-            api.export_between_cursors(parsed_args.export_between_cursors)
 
         # Read/Open operations next
         if parsed_args.open_configuration:

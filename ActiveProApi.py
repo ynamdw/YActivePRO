@@ -739,17 +739,36 @@ def generate_bash_completion(argparser):
     script_path = os.path.abspath(__file__)
 
     commands = []
+    one_arg_commands = []
+    two_arg_commands = []
     file_commands = []
 
     for action in argparser._actions:  # pylint: disable=protected-access
         if action.option_strings:
             command = " ".join(action.option_strings)
-            if action.nargs == 0:
+
+            # Determine nargs based on the given conditions
+            if action.nargs is not None:
+                nargs = action.nargs
+            elif action.metavar is None:
+                nargs = 0
+            elif isinstance(action.metavar, str):
+                nargs = 1
+            elif isinstance(action.metavar, list):
+                nargs = len(action.metavar)
+            else:
+                nargs = 0  # Default case if none of the conditions match
+
+            if nargs == 0:
                 commands.append(command)
-            elif action.nargs == 1:
-                commands.append(f"{command} VALUE")
-            elif action.nargs == 2:
-                commands.append(f"{command} VALUE1 VALUE2")
+            elif nargs == 1 or (
+                isinstance(action.metavar, str)
+                and not action.metavar.endswith("FILE")
+            ):
+                one_arg_commands.append(f"{command}")
+            elif nargs == 2:
+                two_arg_commands.append(f"{command}")
+
             if (
                 action.metavar
                 and isinstance(action.metavar, str)
@@ -764,29 +783,44 @@ _active_pro_api_completion() {{
 
     local commands=(
         {" ".join(commands)}
+        {" ".join(one_arg_commands)}
+        {" ".join(two_arg_commands)}
+    )
+
+    local one_arg_commands=(
+        {" ".join(one_arg_commands)}
+    )
+
+    local two_arg_commands=(
+        {" ".join(two_arg_commands)}
     )
 
     local file_commands=(
         {" ".join(file_commands)}
     )
 
-    if [[ ${{#words[@]}} -eq 2 ]]; then
-        COMPREPLY=( $(compgen -W "${{commands[*]}}" -- ${{cur}}) )
-        return 0
-    elif [[ ${{#words[@]}} -eq 3 ]]; then
-        prev=${{words[1]}}
+    if [[ ${{#words[@]}} -ge 4 ]]; then
+        prev=${{words[-3]}}
+        if [[ " ${{two_arg_commands[*]}} " =~ " ${{prev}} " ]]; then
+            # COMPREPLY=( "Enter VALUE2" )
+            return 0
+        fi
+    fi
+    if [[ ${{#words[@]}} -ge 3 ]]; then
+        prev=${{words[-2]}}
         if [[ " ${{file_commands[*]}} " =~ " ${{prev}} " ]]; then
             _filedir
             return 0
         fi
-    elif [[ ${{#words[@]}} -eq 4 ]]; then
-        prev=${{words[1]}}
-        if [[ " ${{commands[*]}} " =~ " ${{prev}} " ]]; then
-            COMPREPLY=( $(compgen -W "VALUE1 VALUE2" -- ${{cur}}) )
+        if [[ " ${{one_arg_commands[*]}} " =~ " ${{prev}} " ]]; then
+            # COMPREPLY=( "Enter VALUE" )
+            return 0
+        fi
+        if [[ " ${{two_arg_commands[*]}} " =~ " ${{prev}} " ]]; then
+            # COMPREPLY=( "Enter VALUE1" )
             return 0
         fi
     fi
-
     COMPREPLY=( $(compgen -W "${{commands[*]}}" -- ${{cur}}) )
     return 0
 }}
@@ -795,7 +829,8 @@ complete -F _active_pro_api_completion {script_name}
 complete -F _active_pro_api_completion ./{script_name}
 complete -F _active_pro_api_completion {script_path}
 """
-    logger.info(completion_script)
+
+    print(completion_script)
 
 
 # Demonstration code

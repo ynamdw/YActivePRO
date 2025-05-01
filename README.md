@@ -25,13 +25,16 @@ bash-completion script as well.
 
 ### Example Scripts
 
+Note: The scripts suppose that `ActiveProApi.py` is present in the working directory.
+
 #### Export the last 10 minutes of a capture
 
 The `exportActive10min.sh` bash script demonstrates how to export the last
 10 minutes of a capture.
 
-To use this script, make sure you have the `ActiveProApi.py` script in the
-local directory and run the script from the command line.
+#### Export a range of captured data
+
+The `exportAfterLoadAndZoom.sh` bash script demonstrates how to export a specific range of captured data, after start the debugger and zooming.
 
 ## Disclaimer
 
@@ -45,11 +48,10 @@ not an endorsement of Active Firmware Tools nor its products.
 
 ## NOTICE
 
-Copyright 2025 Ynamics - 50 rue de Pontoise - 95870 BEZONS - France -
 https://www.ynamics.com
 
-This product includes software developed by Ynamics
-(https://www.ynamics.com/).
+This product includes software developed by
+[Ynamics](https://wwW.ynamics.com) - 50 rue de Pontoise - 95870 BEZONS - France.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not
 use this file except in compliance with the License. You may obtain a copy

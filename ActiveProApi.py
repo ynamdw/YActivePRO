@@ -428,6 +428,16 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         Returns:
             str: The response from the application.
         """
+        if start < 0 or end < 0:
+            capture_time = float(self.get_capture_time())
+            if start < 0:
+                start = max(capture_time + start, 0)
+            if end < 0:
+                end = max(capture_time + end, 0)
+        if end < start:
+            tmp = end
+            start = end
+            end = tmp
         return self.send_command(f"ZoomFrom {start} {end}")
 
     def search(self, string):
@@ -741,7 +751,7 @@ def generate_bash_completion(argparser):
     commands = []
     one_arg_commands = []
     two_arg_commands = []
-    file_commands = []
+    file_commands = {}
 
     for action in argparser._actions:  # pylint: disable=protected-access
         if action.option_strings:
@@ -774,7 +784,25 @@ def generate_bash_completion(argparser):
                 and isinstance(action.metavar, str)
                 and action.metavar.endswith("FILE")
             ):
-                file_commands.append(command)
+                file_commands[command] = action.metavar
+
+    MAP_OPT_TO_EXTENSION = {
+        "--export-between-cursors": "csv",
+        "--save-capture": "active",
+        "--save-between-cursors": "active",
+        "--open-configuration": "active",
+        "--save-configuration": "active",
+        "--save-screenshot": "png",
+        "--open-capture": "active",
+    }
+
+    file_commands = {
+        cmd: MAP_OPT_TO_EXTENSION.get(cmd, "") for cmd in file_commands
+    }
+
+    extension_cases = " ".join(
+        [f"{cmd} ) ext={ext} ;;\n" for cmd, ext in file_commands.items()]
+    )
 
     completion_script = f"""
 _active_pro_api_completion() {{
@@ -796,7 +824,7 @@ _active_pro_api_completion() {{
     )
 
     local file_commands=(
-        {" ".join(file_commands)}
+        {" ".join(file_commands.keys())}
     )
 
     if [[ ${{#words[@]}} -ge 4 ]]; then
@@ -809,7 +837,11 @@ _active_pro_api_completion() {{
     if [[ ${{#words[@]}} -ge 3 ]]; then
         prev=${{words[-2]}}
         if [[ " ${{file_commands[*]}} " =~ " ${{prev}} " ]]; then
-            _filedir
+            local ext
+            case ${{prev}} in
+                {extension_cases}
+            esac
+            _filedir '@('${{ext}}')'
             return 0
         fi
         if [[ " ${{one_arg_commands[*]}} " =~ " ${{prev}} " ]]; then

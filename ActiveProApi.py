@@ -375,7 +375,7 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         """
         if time < 0:
             capture_time = float(self.get_capture_time())
-            time = capture_time + time
+            time = max(capture_time + time, 0)
         return self.send_command(f"SetCursorCurrent {time}")
 
     def set_cursor_x1(self, time):
@@ -390,7 +390,7 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         """
         if time < 0:
             capture_time = float(self.get_capture_time())
-            time = capture_time + time
+            time = max(capture_time + time, 0)
         return self.send_command(f"SetCursorX1 {time}")
 
     def set_cursor_x2(self, time):
@@ -405,7 +405,7 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         """
         if time < 0:
             capture_time = float(self.get_capture_time())
-            time = capture_time + time
+            time = max(capture_time + time, 0)
         return self.send_command(f"SetCursorX2 {time}")
 
     def zoom_all(self):

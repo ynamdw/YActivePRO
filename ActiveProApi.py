@@ -428,6 +428,8 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         Returns:
             str: The response from the application.
         """
+        start = float(start)
+        end = float(end)
         if start < 0 or end < 0:
             capture_time = float(self.get_capture_time())
             if start < 0:
@@ -435,9 +437,13 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
             if end < 0:
                 end = max(capture_time + end, 0)
         if end < start:
-            tmp = end
-            start = end
-            end = tmp
+            (start, end) = (end, start)
+        if start == end:
+            if start == 0:
+                capture_time = float(self.get_capture_time())
+                end = min(0.001, capture_time)
+            else:
+                start = max(end - 0.001, 0)
         return self.send_command(f"ZoomFrom {start} {end}")
 
     def search(self, string):

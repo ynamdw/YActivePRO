@@ -28,7 +28,13 @@ import os
 import socket
 import subprocess
 import sys
+from enum import Enum
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+class VerboseLevel(Enum):
+    NONE = 0
+    RESULT = 1
+    INFO = 2
 
 class CustomFormatter(logging.Formatter):
     """
@@ -37,7 +43,6 @@ class CustomFormatter(logging.Formatter):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.first_message = True
 
     def format(self, record):
         # Access to a protected member _fmt of a client class
@@ -47,12 +52,7 @@ class CustomFormatter(logging.Formatter):
         else:
             self._style._fmt = "%(levelname)s: %(message)s"
 
-        if self.first_message:
-            self.first_message = False
-            return "\n" + super().format(record)
-
         return super().format(record)
-
 
 # Set up the logger in the root of the script
 logger = logging.getLogger("ActiveProAPI")
@@ -71,22 +71,24 @@ ch.setFormatter(formatter)
 # Add the handler to the logger
 logger.addHandler(ch)
 
-
 class ActiveProAPI:  # pylint: disable=too-many-public-methods
     """
     A class to interact with the Active-PRO application API.
     """
 
-    def __init__(self, host="localhost", port=37800):
+    def __init__(self, host="localhost", port=37800, verbose=VerboseLevel.INFO):
         self.host = host
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.verbose = True
+        self.verbose = verbose
 
     def connect(self):
         """
         Connect to the Active-PRO application.
         """
+        if self.verbose == VerboseLevel.INFO:
+            api_id = self.port - 37800 + 1
+            logger.info("Connecting to ID: %d - %s:%d", api_id, self.host, self.port)
         self.socket.connect((self.host, self.port))
 
     def disconnect(self):
@@ -105,11 +107,47 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         Returns:
             str: The response from the application.
         """
-        logger.info("Command: %s", command)
+        if self.verbose == VerboseLevel.INFO:
+            logger.info("Command: '%s'", command)
+
         self.socket.sendall((command + "\n").encode())
         response = self.socket.recv(4096).decode().strip()
-        logger.info("Response: %s", response)
+
+        if self.verbose == VerboseLevel.INFO:
+            logger.info("Response: '%s'", response)
+        elif self.verbose == VerboseLevel.RESULT:
+            print(f"{response}{os.linesep}")
         return response
+
+    def find_available_ports(self):
+        """
+        Find available ports in the range 37800 to 37810.
+
+        Returns:
+            dict: A dictionary with keys as IDs and values as port numbers.
+        """
+        available_ports = {}
+
+        def check_port(port):
+            try:
+                logger.log(logging.DEBUG, (f"Try {self.host}:{port}"))
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(0.050)
+                    if s.connect_ex((self.host, port)) == 0:
+                        return port
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.log(logging.ERROR, "Exception: %s", e)
+            return None
+
+        with ThreadPoolExecutor() as executor:
+            futures = {executor.submit(check_port, port): port for port in range(37800, 37811)}
+            for future in as_completed(futures):
+                port = future.result()
+                if port:
+                    id = port - 37800 + 1
+                    available_ports[id] = port
+
+        return available_ports
 
     def hello(self):
         """
@@ -152,9 +190,20 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         Check if the application is capturing data.
 
         Returns:
-            str: The response from the application.
+            bool: True if capturing, False otherwise.
         """
-        return self.send_command("isCapturing")
+        response = self.send_command("isCapturing")
+        return response.lower() != "yes"
+
+    def is_not_capturing(self):
+        """
+        Check if the application is not capturing data.
+
+        Returns:
+            bool: True if not capturing, False otherwise.
+        """
+        response = self.send_command("isCapturing")
+        return response.lower() == "no"
 
     def get_capture_size(self):
         """
@@ -454,7 +503,7 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
             string (str): The string to search for.
 
         Returns:
-            str: The response from the application.
+            str: The timestamp of the search result or "NOTFOUND".
         """
         return self.send_command(f"Search {string}")
 
@@ -599,7 +648,7 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
             filename (str): The name of the file to export to.
 
         Returns:
-            str: The response from the application.
+            str: The response from the application ("NOTSTOPPED", FILENAME).
         """
         return self.send_command(
             f'ExportBetweenCursors {self.get_absolute_path(filename, ".csv")}'
@@ -660,7 +709,6 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
             )
             return result.stdout.strip()
         return os.path.abspath(path)
-
 
 def run_demo(api_instance):  # pylint: disable=too-many-statements
     """
@@ -746,7 +794,6 @@ def run_demo(api_instance):  # pylint: disable=too-many-statements
     api_instance.open_capture("testsave")
     api_instance.exit()
 
-
 def generate_bash_completion(argparser):
     """
     Generate a bash completion script for the API.
@@ -763,11 +810,18 @@ def generate_bash_completion(argparser):
         if action.option_strings:
             command = " ".join(action.option_strings)
 
+            # For debug:
+            #if command == "--host":
+            #    print(f"# {command}-{action}")
+
             # Determine nargs based on the given conditions
             if action.nargs is not None:
                 nargs = action.nargs
             elif action.metavar is None:
-                nargs = 0
+                if action.type is not None:
+                    nargs = 1
+                else:
+                    nargs = 0
             elif isinstance(action.metavar, str):
                 nargs = 1
             elif isinstance(action.metavar, list):
@@ -851,8 +905,19 @@ _active_pro_api_completion() {{
             return 0
         fi
         if [[ " ${{one_arg_commands[*]}} " =~ " ${{prev}} " ]]; then
-            # COMPREPLY=( "Enter VALUE" )
-            return 0
+            if [[ " ${{prev}} " == " --id " ]]; then
+                COMPREPLY=( $(compgen -W "-1 1 2 3 4 5 6 7 8 9" -- ${{cur}}) )
+                return 0
+            elif [[ " ${{prev}} " == " --port " ]]; then
+                COMPREPLY=( $(compgen -W "37800 37801 37802 37803 37804 37805 37806 37807 37808 37809" -- ${{cur}}) )
+                return 0
+            elif [[ " ${{prev}} " == " --host " ]]; then
+                _known_hosts_real -- "${{cur}}"
+                return 0
+            else
+                # COMPREPLY=( "Enter VALUE" )
+                return 0
+            fi
         fi
         if [[ " ${{two_arg_commands[*]}} " =~ " ${{prev}} " ]]; then
             # COMPREPLY=( "Enter VALUE1" )
@@ -869,7 +934,6 @@ complete -F _active_pro_api_completion {script_path}
 """
 
     print(completion_script)
-
 
 # Demonstration code
 if __name__ == "__main__":
@@ -1019,6 +1083,18 @@ if __name__ == "__main__":
         "--new-capture", action="store_true", help="New capture"
     )
     parser.add_argument("--exit", action="store_true", help="Exit")
+    parser.add_argument(
+        "--not-capturing", action="store_true", help="Exit immediately if the session is capturing"
+    )
+    parser.add_argument(
+        "--port", type=int, help="Set the port number"
+    )
+    parser.add_argument(
+        "--id", type=int, help="Select ActiveProDebugger based on 'id'. Use -1 to auto-detect."
+    )
+    parser.add_argument(
+        "--host", type=str, default="localhost", help="Set the host address (default is 'localhost')"
+    )
     parsed_args = parser.parse_args()
 
     if parsed_args.generate_bash_completion:
@@ -1032,9 +1108,33 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
+        # Instantiate api outside of the conditional blocks
+        api = ActiveProAPI(host=parsed_args.host, verbose=VerboseLevel.RESULT if parsed_args.quiet else VerboseLevel.INFO)
 
-        api = ActiveProAPI()
+        if parsed_args.id is not None and parsed_args.port is not None:
+            logger.log(logging.ERROR, "Error: --id and --port cannot be used simultaneously.")
+            sys.exit(1)
+
+        if parsed_args.id is not None:
+            if parsed_args.id == -1:
+                available_ports = api.find_available_ports()
+                if not available_ports:
+                    logger.log(logging.ERROR, "Error: No available ports found.")
+                    sys.exit(1)
+                port = max(available_ports.values())
+                api = ActiveProAPI(host=parsed_args.host, port=port, verbose=VerboseLevel.RESULT if parsed_args.quiet else VerboseLevel.INFO)
+            else:
+                port = 37800 + parsed_args.id - 1
+                api = ActiveProAPI(host=parsed_args.host, port=port, verbose=VerboseLevel.RESULT if parsed_args.quiet else VerboseLevel.INFO)
+        elif parsed_args.port is not None:
+            api = ActiveProAPI(host=parsed_args.host, port=parsed_args.port, verbose=VerboseLevel.RESULT if parsed_args.quiet else VerboseLevel.INFO)
+
         api.connect()
+
+        if parsed_args.not_capturing:
+            if api.is_capturing():
+                logger.log(logging.INFO, "Session is capturing. Exiting.")
+                sys.exit(0)
 
         if parsed_args.demo:
             run_demo(api)

@@ -28,13 +28,19 @@ import os
 import socket
 import subprocess
 import sys
-from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from enum import Enum
+
 
 class VerboseLevel(Enum):
+    """
+    Enum for verbose levels.
+    """
+
     NONE = 0
     RESULT = 1
     INFO = 2
+
 
 class CustomFormatter(logging.Formatter):
     """
@@ -54,6 +60,7 @@ class CustomFormatter(logging.Formatter):
 
         return super().format(record)
 
+
 # Set up the logger in the root of the script
 logger = logging.getLogger("ActiveProAPI")
 logger.setLevel(logging.INFO)
@@ -71,12 +78,15 @@ ch.setFormatter(formatter)
 # Add the handler to the logger
 logger.addHandler(ch)
 
+
 class ActiveProAPI:  # pylint: disable=too-many-public-methods
     """
     A class to interact with the Active-PRO application API.
     """
 
-    def __init__(self, host="localhost", port=37800, verbose=VerboseLevel.INFO):
+    def __init__(
+        self, host="localhost", port=37800, verbose=VerboseLevel.INFO
+    ):
         self.host = host
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -88,7 +98,9 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         """
         if self.verbose == VerboseLevel.INFO:
             api_id = self.port - 37800 + 1
-            logger.info("Connecting to ID: %d - %s:%d", api_id, self.host, self.port)
+            logger.info(
+                "Connecting to ID: %d - %s:%d", api_id, self.host, self.port
+            )
         self.socket.connect((self.host, self.port))
 
     def disconnect(self):
@@ -126,28 +138,33 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         Returns:
             dict: A dictionary with keys as IDs and values as port numbers.
         """
-        available_ports = {}
+        available_ports_dict = {}
 
-        def check_port(port):
+        def check_port(available_port):
             try:
-                logger.log(logging.DEBUG, (f"Try {self.host}:{port}"))
+                logger.log(
+                    logging.DEBUG, "Try %s:%d", self.host, available_port
+                )
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(0.050)
-                    if s.connect_ex((self.host, port)) == 0:
-                        return port
+                    if s.connect_ex((self.host, available_port)) == 0:
+                        return available_port
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.log(logging.ERROR, "Exception: %s", e)
             return None
 
         with ThreadPoolExecutor() as executor:
-            futures = {executor.submit(check_port, port): port for port in range(37800, 37811)}
+            futures = {
+                executor.submit(check_port, available_port): available_port
+                for available_port in range(37800, 37811)
+            }
             for future in as_completed(futures):
-                port = future.result()
-                if port:
-                    id = port - 37800 + 1
-                    available_ports[id] = port
+                available_port = future.result()
+                if available_port:
+                    available_id = available_port - 37800 + 1
+                    available_ports_dict[available_id] = available_port
 
-        return available_ports
+        return available_ports_dict
 
     def hello(self):
         """
@@ -710,6 +727,7 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
             return result.stdout.strip()
         return os.path.abspath(path)
 
+
 def run_demo(api_instance):  # pylint: disable=too-many-statements
     """
     Run a demonstration of the API.
@@ -794,6 +812,8 @@ def run_demo(api_instance):  # pylint: disable=too-many-statements
     api_instance.open_capture("testsave")
     api_instance.exit()
 
+
+# pylint: disable=too-many-branches
 def generate_bash_completion(argparser):
     """
     Generate a bash completion script for the API.
@@ -811,7 +831,7 @@ def generate_bash_completion(argparser):
             command = " ".join(action.option_strings)
 
             # For debug:
-            #if command == "--host":
+            # if command == "--host":
             #    print(f"# {command}-{action}")
 
             # Determine nargs based on the given conditions
@@ -864,6 +884,8 @@ def generate_bash_completion(argparser):
         [f"{cmd} ) ext={ext} ;;\n" for cmd, ext in file_commands.items()]
     )
 
+    possible_ports = " ".join([str(port) for port in range(37800, 37810)])
+
     completion_script = f"""
 _active_pro_api_completion() {{
     local cur prev words cword
@@ -909,7 +931,7 @@ _active_pro_api_completion() {{
                 COMPREPLY=( $(compgen -W "-1 1 2 3 4 5 6 7 8 9" -- ${{cur}}) )
                 return 0
             elif [[ " ${{prev}} " == " --port " ]]; then
-                COMPREPLY=( $(compgen -W "37800 37801 37802 37803 37804 37805 37806 37807 37808 37809" -- ${{cur}}) )
+                COMPREPLY=( $(compgen -W "{possible_ports}" -- ${{cur}}) )
                 return 0
             elif [[ " ${{prev}} " == " --host " ]]; then
                 _known_hosts_real -- "${{cur}}"
@@ -934,6 +956,7 @@ complete -F _active_pro_api_completion {script_path}
 """
 
     print(completion_script)
+
 
 # Demonstration code
 if __name__ == "__main__":
@@ -1084,16 +1107,21 @@ if __name__ == "__main__":
     )
     parser.add_argument("--exit", action="store_true", help="Exit")
     parser.add_argument(
-        "--not-capturing", action="store_true", help="Exit immediately if the session is capturing"
+        "--not-capturing",
+        action="store_true",
+        help="Exit immediately if the session is capturing",
+    )
+    parser.add_argument("--port", type=int, help="Set the port number")
+    parser.add_argument(
+        "--id",
+        type=int,
+        help="Select ActiveProDebugger based on 'id'. Use -1 to auto-detect.",
     )
     parser.add_argument(
-        "--port", type=int, help="Set the port number"
-    )
-    parser.add_argument(
-        "--id", type=int, help="Select ActiveProDebugger based on 'id'. Use -1 to auto-detect."
-    )
-    parser.add_argument(
-        "--host", type=str, default="localhost", help="Set the host address (default is 'localhost')"
+        "--host",
+        type=str,
+        default="localhost",
+        help="Set the host address (default is 'localhost')",
     )
     parsed_args = parser.parse_args()
 
@@ -1109,25 +1137,59 @@ if __name__ == "__main__":
 
     try:
         # Instantiate api outside of the conditional blocks
-        api = ActiveProAPI(host=parsed_args.host, verbose=VerboseLevel.RESULT if parsed_args.quiet else VerboseLevel.INFO)
+        api = ActiveProAPI(
+            host=parsed_args.host,
+            verbose=(
+                VerboseLevel.RESULT if parsed_args.quiet else VerboseLevel.INFO
+            ),
+        )
 
         if parsed_args.id is not None and parsed_args.port is not None:
-            logger.log(logging.ERROR, "Error: --id and --port cannot be used simultaneously.")
+            logger.log(
+                logging.ERROR,
+                "Error: --id and --port cannot be used simultaneously.",
+            )
             sys.exit(1)
 
         if parsed_args.id is not None:
             if parsed_args.id == -1:
                 available_ports = api.find_available_ports()
                 if not available_ports:
-                    logger.log(logging.ERROR, "Error: No available ports found.")
+                    logger.log(
+                        logging.ERROR, "Error: No available ports found."
+                    )
                     sys.exit(1)
-                port = max(available_ports.values())
-                api = ActiveProAPI(host=parsed_args.host, port=port, verbose=VerboseLevel.RESULT if parsed_args.quiet else VerboseLevel.INFO)
+                selected_port = max(available_ports.values())
+                api = ActiveProAPI(
+                    host=parsed_args.host,
+                    port=selected_port,
+                    verbose=(
+                        VerboseLevel.RESULT
+                        if parsed_args.quiet
+                        else VerboseLevel.INFO
+                    ),
+                )
             else:
-                port = 37800 + parsed_args.id - 1
-                api = ActiveProAPI(host=parsed_args.host, port=port, verbose=VerboseLevel.RESULT if parsed_args.quiet else VerboseLevel.INFO)
+                selected_port = 37800 + parsed_args.id - 1
+                api = ActiveProAPI(
+                    host=parsed_args.host,
+                    port=selected_port,
+                    verbose=(
+                        VerboseLevel.RESULT
+                        if parsed_args.quiet
+                        else VerboseLevel.INFO
+                    ),
+                )
         elif parsed_args.port is not None:
-            api = ActiveProAPI(host=parsed_args.host, port=parsed_args.port, verbose=VerboseLevel.RESULT if parsed_args.quiet else VerboseLevel.INFO)
+            api = ActiveProAPI(
+                host=parsed_args.host,
+                port=parsed_args.port,
+                verbose=(
+                    VerboseLevel.RESULT
+                    if parsed_args.quiet
+                    else VerboseLevel.INFO
+                ),
+            )
 
         api.connect()
 

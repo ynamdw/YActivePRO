@@ -727,6 +727,98 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
             return result.stdout.strip()
         return os.path.abspath(path)
 
+    def convert_a0_mode(self, a0_mode):
+        """
+        Convert textual A0 mode to numerical value.
+
+        Args:
+            a0_mode (str or int): The mode to convert.
+
+        Returns:
+            int: The numerical value of the mode.
+        """
+        mode_map = {
+            "tristate": 0,
+            "0v": 1,
+            "1v": 2,
+            "2v": 3,
+            "3v": 4,
+            "3.3v": 5,
+            "dc": 6,
+        }
+        if isinstance(a0_mode, str):
+            a0_mode = a0_mode.lower()
+            if a0_mode in mode_map:
+                return mode_map[a0_mode]
+            raise ValueError(f"Invalid A0 mode: {a0_mode}")
+        return a0_mode
+
+    def convert_a1_mode(self, a1_mode):
+        """
+        Convert textual A1 mode to numerical value.
+
+        Args:
+            a1_mode (str or int): The mode to convert.
+
+        Returns:
+            int: The numerical value of the mode.
+        """
+        mode_map = {
+            "tristate": 0,
+            "0v": 1,
+            "1v": 2,
+            "2v": 3,
+            "3v": 4,
+            "3.3v": 5,
+            "dc": 6,
+            "ramp": 7,
+            "sine": 8,
+            "square": 9,
+            "triangle": 10,
+        }
+        if isinstance(a1_mode, str):
+            a1_mode = a1_mode.lower()
+            if a1_mode in mode_map:
+                return mode_map[a1_mode]
+            raise ValueError(f"Invalid A1 mode: {a1_mode}")
+        return a1_mode
+
+    def convert_d0_mode(self, d0_mode):
+        """
+        Convert textual D0 mode to numerical value.
+
+        Args:
+            d0_mode (str or int): The mode to convert.
+
+        Returns:
+            int: The numerical value of the mode.
+        """
+        mode_map = {"tristate": 0, "0v": 1, "3.3v": 2, "pwm": 3}
+        if isinstance(d0_mode, str):
+            d0_mode = d0_mode.lower()
+            if d0_mode in mode_map:
+                return mode_map[d0_mode]
+            raise ValueError(f"Invalid D0 mode: {d0_mode}")
+        return d0_mode
+
+    def convert_d1_mode(self, d1_mode):
+        """
+        Convert textual D1 mode to numerical value.
+
+        Args:
+            d1_mode (str or int): The mode to convert.
+
+        Returns:
+            int: The numerical value of the mode.
+        """
+        mode_map = {"tristate": 0, "0v": 1, "3.3v": 2, "pwm": 3}
+        if isinstance(d1_mode, str):
+            d1_mode = d1_mode.lower()
+            if d1_mode in mode_map:
+                return mode_map[d1_mode]
+            raise ValueError(f"Invalid D1 mode: {d1_mode}")
+        return d1_mode
+
 
 def run_demo(api_instance):  # pylint: disable=too-many-statements
     """
@@ -813,7 +905,7 @@ def run_demo(api_instance):  # pylint: disable=too-many-statements
     api_instance.exit()
 
 
-# pylint: disable=too-many-branches
+# pylint: disable=too-many-branches,too-many-locals
 def generate_bash_completion(argparser):
     """
     Generate a bash completion script for the API.
@@ -825,6 +917,7 @@ def generate_bash_completion(argparser):
     one_arg_commands = []
     two_arg_commands = []
     file_commands = {}
+    choice_commands = {}
 
     for action in argparser._actions:  # pylint: disable=protected-access
         if action.option_strings:
@@ -866,6 +959,9 @@ def generate_bash_completion(argparser):
             ):
                 file_commands[command] = action.metavar
 
+            if action.choices:
+                choice_commands[command] = action.choices
+
     MAP_OPT_TO_EXTENSION = {
         "--export-between-cursors": "csv",
         "--save-capture": "active",
@@ -885,6 +981,16 @@ def generate_bash_completion(argparser):
     )
 
     possible_ports = " ".join([str(port) for port in range(37800, 37810)])
+
+    # Generate the code for the options with choices
+    choice_commands_str = "\n".join(
+        [
+            f'{cmd}) COMPREPLY=( $(compgen -W "'
+            f"{' '.join(choices)}"
+            '" -- ${{cur}}) );;'
+            for cmd, choices in choice_commands.items()
+        ]
+    )
 
     completion_script = f"""
 _active_pro_api_completion() {{
@@ -909,6 +1015,10 @@ _active_pro_api_completion() {{
         {" ".join(file_commands.keys())}
     )
 
+    local choice_commands=(
+        {" ".join(choice_commands.keys())}
+    )
+
     if [[ ${{#words[@]}} -ge 4 ]]; then
         prev=${{words[-3]}}
         if [[ " ${{two_arg_commands[*]}} " =~ " ${{prev}} " ]]; then
@@ -918,6 +1028,11 @@ _active_pro_api_completion() {{
     fi
     if [[ ${{#words[@]}} -ge 3 ]]; then
         prev=${{words[-2]}}
+
+        case "$prev" in
+            {choice_commands_str}
+        esac
+
         if [[ " ${{file_commands[*]}} " =~ " ${{prev}} " ]]; then
             local ext
             case ${{prev}} in
@@ -1001,19 +1116,46 @@ if __name__ == "__main__":
         "--generate-bash-completion)",
     )
     parser.add_argument(
-        "--set-d0-mode", metavar="PARAM", type=int, help="Set D0 mode"
+        "--set-d0-mode",
+        metavar="PARAM",
+        type=str.upper,  # Convert input to uppercase
+        choices=["0", "1", "2", "3", "TRISTATE", "0V", "3.3V", "PWM"],
+        help="Set D0 mode (0=TRISTATE, 1=0V, 2=3.3V, 3=PWM)",
     )
     parser.add_argument(
         "--set-d0-pwm", metavar="PERCENT", type=int, help="Set D0 PWM"
     )
     parser.add_argument(
-        "--set-d1-mode", metavar="PARAM", type=int, help="Set D1 mode"
+        "--set-d1-mode",
+        metavar="PARAM",
+        type=str.upper,  # Convert input to uppercase
+        choices=["0", "1", "2", "3", "TRISTATE", "0V", "3.3V", "PWM"],
+        help="Set D1 mode (0=TRISTATE, 1=0V, 2=3.3V, 3=PWM)",
     )
     parser.add_argument(
         "--set-d1-pwm", metavar="PERCENT", type=int, help="Set D1 PWM"
     )
     parser.add_argument(
-        "--set-a0-mode", metavar="PARAM", type=int, help="Set A0 mode"
+        "--set-a0-mode",
+        metavar="PARAM",
+        type=str,
+        choices=[
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "TRISTATE",
+            "0V",
+            "1V",
+            "2V",
+            "3V",
+            "3.3V",
+            "DC",
+        ],
+        help="Set A0 mode (0=TRISTATE, 1=0V, 2=1V, 3=2V, 4=3V, 5=3.3V, 6=DC)",
     )
     parser.add_argument(
         "--set-a0-dc-level",
@@ -1022,7 +1164,37 @@ if __name__ == "__main__":
         help="Set A0 DC level",
     )
     parser.add_argument(
-        "--set-a1-mode", metavar="PARAM", type=int, help="Set A1 mode"
+        "--set-a1-mode",
+        metavar="PARAM",
+        type=str,
+        choices=[
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "TRISTATE",
+            "0V",
+            "1V",
+            "2V",
+            "3V",
+            "3.3V",
+            "DC",
+            "RAMP",
+            "SINE",
+            "SQUARE",
+            "TRIANGLE",
+        ],
+        help=(
+            "Set A1 mode (0=TRISTATE, 1=0V, 2=1V, 3=2V, 4=3V, 5=3.3V, 6=DC, "
+            "7=RAMP, 8=SINE, 9=SQUARE, 10=TRIANGLE)"
+        ),
     )
     parser.add_argument(
         "--set-a1-dc-level",
@@ -1268,25 +1440,45 @@ if __name__ == "__main__":
 
         # Configuration operations
         if parsed_args.set_d0_mode is not None:
-            api.set_d0_mode(parsed_args.set_d0_mode)
+            try:
+                mode = api.convert_d0_mode(parsed_args.set_d0_mode)
+                api.set_d0_mode(mode)
+            except ValueError as e:
+                logger.log(logging.ERROR, str(e))
+                sys.exit(1)
 
         if parsed_args.set_d0_pwm is not None:
             api.set_d0_pwm(parsed_args.set_d0_pwm)
 
         if parsed_args.set_d1_mode is not None:
-            api.set_d1_mode(parsed_args.set_d1_mode)
+            try:
+                mode = api.convert_d1_mode(parsed_args.set_d1_mode)
+                api.set_d1_mode(mode)
+            except ValueError as e:
+                logger.log(logging.ERROR, str(e))
+                sys.exit(1)
 
         if parsed_args.set_d1_pwm is not None:
             api.set_d1_pwm(parsed_args.set_d1_pwm)
 
         if parsed_args.set_a0_mode is not None:
-            api.set_a0_mode(parsed_args.set_a0_mode)
+            try:
+                mode = api.convert_a0_mode(parsed_args.set_a0_mode)
+                api.set_a0_mode(mode)
+            except ValueError as e:
+                logger.log(logging.ERROR, str(e))
+                sys.exit(1)
 
         if parsed_args.set_a0_dc_level is not None:
             api.set_a0_dc_level(parsed_args.set_a0_dc_level)
 
         if parsed_args.set_a1_mode is not None:
-            api.set_a1_mode(parsed_args.set_a1_mode)
+            try:
+                mode = api.convert_a1_mode(parsed_args.set_a1_mode)
+                api.set_a1_mode(mode)
+            except ValueError as e:
+                logger.log(logging.ERROR, str(e))
+                sys.exit(1)
 
         if parsed_args.set_a1_dc_level is not None:
             api.set_a1_dc_level(parsed_args.set_a1_dc_level)

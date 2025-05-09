@@ -52,7 +52,7 @@ if [ "$IS_CAPTURING" == "YES" ]; then
 fi
 
 # Export the data between cursors to a CSV file
-./ActiveProApi.py --id=-1 -q --set-cursor-x1 -${DURATION} --set-cursor-x2 -0.000000001 --export-between-cursors "$OUTPUT_FILE.tmp"
+./ActiveProApi.py --id=-1 -q --set-cursor-x1 "-${DURATION}" --set-cursor-x2 -0.000000001 --export-between-cursors "$OUTPUT_FILE.tmp"
 
 if [ "$IS_CAPTURING" == "YES" ]; then
     # Clean up the temporary file

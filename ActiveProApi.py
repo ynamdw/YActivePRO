@@ -512,6 +512,26 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
                 start = max(end - 0.001, 0)
         return self.send_command(f"ZoomFrom {start} {end}")
 
+    def zoom_cursors(self):
+        """
+        Zoom between the X1 and X2 cursors.
+        (Wishful thinking, not implemented)
+
+        Returns:
+            str: The response from the application (zoom_from).
+        """
+        x1 = self.send_command("GetCursorX1")
+        if x1.startswith("ERROR"):
+            logger.log(logging.ERROR, "Error: %s", x1)
+            return x1
+        x1 = float(x1)
+        x2 = self.send_command("GetCursorX2")
+        if x2.startswith("ERROR"):
+            logger.log(logging.ERROR, "Error: %s", x2)
+            return x2
+        x2 = float(x2)
+        return self.zoom_from(x1, x2)
+
     def search(self, string):
         """
         Search for a string in the data.
@@ -1231,6 +1251,19 @@ if __name__ == "__main__":
         nargs=2,
         help="Zoom from start to end",
     )
+    parser.add_argument(
+        "--zoom-range",
+        metavar=("START", "END"),
+        type=float,
+        nargs=2,
+        help="Zoom from start to end (same as --zoom-from)",
+    )
+    # Not implemented, so commented
+    #parser.add_argument(
+    #    "--zoom-cursors",
+    #    action="store_true",
+    #    help="Zoom between the X1 and X2 cursors",
+    #)
     parser.add_argument("--search", metavar="STRING", help="Search")
     parser.add_argument(
         "--quiet", "-q", action="store_true", help="Disable verbosity"
@@ -1393,6 +1426,13 @@ if __name__ == "__main__":
 
         if parsed_args.zoom_from is not None:
             api.zoom_from(parsed_args.zoom_from[0], parsed_args.zoom_from[1])
+
+        if parsed_args.zoom_range is not None:
+            api.zoom_from(parsed_args.zoom_range[0], parsed_args.zoom_range[1])
+
+        # Can't read position of cursors, so can't zoom to cursors
+        # if parsed_args.zoom_cursors:
+        #     api.zoom_cursors()
 
         if parsed_args.search is not None:
             api.search(parsed_args.search)

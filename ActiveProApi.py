@@ -617,6 +617,8 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         Returns:
             str: The response from the application.
         """
+        if self.is_capturing():
+            self.stop_capture()
         return self.send_command(
             f'OpenCapture {self.get_absolute_path(filename, ".active")}'
         )
@@ -1259,11 +1261,11 @@ if __name__ == "__main__":
         help="Zoom from start to end (same as --zoom-from)",
     )
     # Not implemented, so commented
-    #parser.add_argument(
+    # parser.add_argument(
     #    "--zoom-cursors",
     #    action="store_true",
     #    help="Zoom between the X1 and X2 cursors",
-    #)
+    # )
     parser.add_argument("--search", metavar="STRING", help="Search")
     parser.add_argument(
         "--quiet", "-q", action="store_true", help="Disable verbosity"

@@ -1,12 +1,13 @@
 # YActiveProApi
 
-A set of tools by Ynamics for the Active-PRO Debugger API
+A set of tools by Ynamics for the Active-PRO Automation API.
 
 ## ActiveProApi.py
 
 This script provides a command-line interface (CLI) to access the
-Active-PRO application API. It allows you to control the Active-PRO
-application through simple string commands over a TCP socket.
+[Active-PRO Automation API](https://www.activefirmwaretools.com/usersmanual/automation-api).
+It allows you to control the Active-PRO application through simple commands
+you can further automate.
 
 ### Features
 

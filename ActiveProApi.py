@@ -2,7 +2,7 @@
 """
 Provides a CLI to access the Active-PRO application API
 
-@copyright Copyright (c) 2025-2025 Ynamics SARL - France
+@copyright Copyright (c) 2025-2026 Ynamics SARL - France
 @license Apache License, Version 2.0
 @link https://www.ynamics.com/
 @author MDW / YNAMICS
@@ -503,7 +503,7 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
             if end < 0:
                 end = max(capture_time + end, 0)
         if end < start:
-            (start, end) = (end, start)
+            start, end = (end, start)
         if start == end:
             if start == 0:
                 capture_time = float(self.get_capture_time())
@@ -1327,8 +1327,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--host",
         type=str,
-        default="localhost",
-        help="Set the host address (default is 'localhost')",
+        default=os.environ.get("YAPD_MCP_HOST") or "localhost",
+        help="Set the host address (default: YAPD_MCP_HOST or 'localhost')",
     )
     parsed_args = parser.parse_args()
 

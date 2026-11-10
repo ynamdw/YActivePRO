@@ -172,3 +172,12 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Local runtime state and scratch files of this repo
+yapd-mcp-state/
+.*.swp
+*.swp
+.aider.conf.yml
+/a
+/a.active
+capture_*.csv

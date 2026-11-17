@@ -42,9 +42,14 @@ this document carries only the project-specific material.
   matches the Device or Channel column (e.g. `UART_PACKETS`, or
   `UART_PACKETS,GEN`). The answer of a between-cursors export echoes the
   exported range (`X1=... X2=...`).
-- Text answers of `read_file` are bare content (no prefix wrapper; a
-  trailing `[read_file: ...]` note only when offset/truncation applies);
-  only binary answers carry the one-line base64 header.
+- Text answers of `read_file` are pure content (no wrapper, no trailing
+  note) so chunked reads stay exact: `offset += len(answer)` is the next
+  offset. Only binary answers carry the one-line base64 header. (No
+  `structuredContent`: the local connector maps it to the tool result and
+  would hide the text content.)
+- File tools (open/save/export) answer with a 600 s socket timeout
+  (`LONG_TIMEOUT`): a large export can take minutes, and a short recv
+  timeout was misreported as "application not reachable".
 - The raw `ExportBetweenCursors` .csv encodes non-printable bytes as `[HH]`
   hex markers and packet ends as `=EoP`; the export tool corrects the
   written file in place (decode to the character or a `\r`/`\n`/ `\xHH`

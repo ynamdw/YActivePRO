@@ -64,12 +64,12 @@ work and direct access to the Active-PRO application:
 - `read_file`: read back a file on the server machine, e.g. the .csv
   written by `export_between_cursors`, the .aft written by
   `export_ai_snapshot` or the .png written by `save_screenshot` (text files
-  as bare text - no wrapper line, so the answer can be saved as-is, with a
-  trailing `[read_file: ...]` note only when `offset`/truncation applies;
-  other files base64-encoded; binary answers are standard base64 (RFC 4648)
-  behind a one-line `<path> (<N> bytes, base64):` header). `read_file`
-  takes `offset` (characters for text, bytes for binary) plus `max_chars`
-  for chunked reads of large exports. The save/export tools also take
+  as pure text - no wrapper line or note, so the answer can be saved as-is
+  and chunked reads stay exact (`offset += len(answer)`); other files
+  base64-encoded; binary answers are standard base64 (RFC 4648) behind a
+  one-line `<path> (<N> bytes, base64):` header). `read_file` takes
+  `offset` (characters for text, bytes for binary) plus `max_chars` for
+  chunked reads of large exports. The save/export tools also take
   `read_back: true` (plus `max_chars`/`offset`) to return the written
   file's content in the same tool answer, without a separate `read_file`
   call; `export_ai_snapshot` and `export_between_cursors` additionally take

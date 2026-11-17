@@ -45,3 +45,15 @@ jobs:
             ${{ env.RAW_LOG }}
             ${{ env.CS_XML }}
           retention-days: 2
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run the built-in selftests
+        run: |
+          python3 yactivepro_mcp.py --selftest
+          python3 ActiveProApi.py --help > /dev/null
+          python3 ActiveProApi.py --generate-bash-completion > /dev/null

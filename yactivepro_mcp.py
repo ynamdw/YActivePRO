@@ -435,14 +435,14 @@ file does not exist yet. Set read_back=true on the save/export tool
 to get the file content in the same answer (text for .csv and .aft,
 base64 for .png, truncated at max_chars); without it, read the export
 back with read_file, which accepts any path under /tmp or a path
-written by a save/export tool. Text content comes back bare - no
-wrapper line - so the answer can be saved as-is; a trailing
-"[read_file: ...]" note appears only when offset or truncation
-applies. Binary files come as a one-line header
-"<path> (<N> bytes, base64):" followed by standard base64 (RFC 4648),
-so strip the header before base64 -d. Page through large text exports
-with offset (characters) + max_chars; for binary files offset counts
-bytes.
+written by a save/export tool. Text content comes back pure - no
+wrapper line, no trailing note - so the answer can be saved as-is and
+chunked reads stay exact: offset += len(answer) is the next offset
+(the answer is truncated when it reaches max_chars). Binary files
+come as a one-line header "<path> (<N> bytes, base64):" followed by
+standard base64 (RFC 4648), so strip the header before base64 -d.
+Page through large text exports with offset (characters) + max_chars;
+for binary files offset counts bytes.
 
 Find, then inspect: search returns the timestamp of a string in the
 decoded device data (packet presenter rows; strings that exist only
@@ -828,9 +828,16 @@ DEVICE_TOOLS = {
     "set_device_setting": "Device{device}Setting {value}",
 }
 
-# blocking pipeline commands get a long socket timeout (server.py uses
-# 600 s for the same commands)
-TOOL_TIMEOUTS = {"apply_changes": 600, "reprocess_triggers": 600}
+# Blocking commands get a long socket timeout (server.py uses 600 s for
+# the same commands): the pipeline commands, and the file tools - their
+# answer only comes after the application finished reading/writing the
+# file, which can take minutes for a large export (a short recv timeout
+# is then misreported as "application not reachable").
+LONG_TIMEOUT = 600
+TOOL_TIMEOUTS = {name: LONG_TIMEOUT for name in PATH_TOOLS}
+TOOL_TIMEOUTS.update(
+    {"apply_changes": LONG_TIMEOUT, "reprocess_triggers": LONG_TIMEOUT}
+)
 DEFAULT_TIMEOUT = 10
 
 
@@ -983,8 +990,9 @@ def check_read_path(path: str, tmp_root: str = "") -> str:
 
 def read_file(path: str, arguments: Dict[str, Any]) -> str:
     """Read back an exported/saved file for the MCP client: text files
-    as text (from char offset, truncated at max_chars), other files as
-    base64 (from byte offset)."""
+    as pure text (from char offset, truncated at max_chars) - never a
+    wrapper or note, so chunked reads stay exact (offset += len(answer));
+    other files as base64 (from byte offset) behind a one-line header."""
     if not path:
         raise ValueError("path is required")
     absolute = check_read_path(path)
@@ -1000,18 +1008,7 @@ def read_file(path: str, arguments: Dict[str, Any]) -> str:
             if offset:
                 fh.read(offset)  # skip the first offset chars
             text = fh.read(max_chars + 1)
-        truncated = len(text) > max_chars
-        body = text[:max_chars]
-        if offset or truncated:
-            # trailing note only: a prefix wrapper line gets copied into
-            # deliverables when an agent saves the answer as-is
-            body += "\n[read_file: %s (%d bytes%s%s)]" % (
-                absolute,
-                size,
-                ", from char %d" % offset if offset else "",
-                ", truncated at %d chars" % max_chars if truncated else "",
-            )
-        return body
+        return text[:max_chars]
     if size - offset > READ_BINARY_MAX_BYTES:
         raise ValueError(
             "file too large to return as base64 from offset %d "
@@ -1944,10 +1941,10 @@ API_TOOLS = [
         "ReadFile: read back a file on this server machine, e.g. the .csv "
         "written by export_between_cursors or the .png written by "
         "save_screenshot. Text files (.csv, .txt, .log, .md, .json, .aft) "
-        "are returned as bare text - no wrapper line, so the answer can be "
-        "saved as-is (from char offset, truncated at max_chars; a trailing "
-        "'[read_file: ...]' note is appended only when offset or "
-        "truncation applies). "
+        "are returned as pure text - no wrapper line, no note - so the "
+        "answer can be saved as-is and chunked reads stay exact "
+        "(offset += len(answer); truncated when the answer is shorter "
+        "than max_chars). "
         "Other files come "
         "as a one-line header '<path> (<N> bytes, base64):' followed by "
         "standard base64 (RFC 4648: +, /, padding; strip the header "
@@ -2183,7 +2180,9 @@ def run_api_tool(name: str, arguments: Dict[str, Any], api) -> str:
             if api.send_command("isCapturing").upper() == "YES":
                 api.send_command("StopCapture")
         command = "{} {}".format(COMMANDS[name], path)
-        response = api.send_command(command)
+        response = api.send_command(
+            command, timeout=TOOL_TIMEOUTS.get(name, DEFAULT_TIMEOUT)
+        )
         if local_path is not None:
             # the app answers OK/YES on success, NO or ERROR... on failure
             answer = response.strip().upper()
@@ -3755,7 +3754,7 @@ def selftest() -> None:
 
         # a successful save/export through run_api_tool records the path
         class _OkApi:
-            def send_command(self, _command):
+            def send_command(self, _command, **_kwargs):
                 """Pretend the application accepted the command."""
                 return "OK"
 
@@ -3769,7 +3768,7 @@ def selftest() -> None:
 
         # a failed save does not record
         class _FailApi(_OkApi):
-            def send_command(self, _command):
+            def send_command(self, _command, **_kwargs):
                 """Pretend the application refused the command."""
                 return "ERROR disk full"
 
@@ -3903,11 +3902,11 @@ def selftest() -> None:
 
         # the export answer echoes the X1/X2 range actually exported
         class _RangeApi(_OkApi):
-            def send_command(self, command, _timeout=10):
+            def send_command(self, _command, **_kwargs):
                 """Answer fixed cursor positions."""
-                if command == "GetCursorX1":
+                if _command == "GetCursorX1":
                     return "328.5"
-                if command == "GetCursorX2":
+                if _command == "GetCursorX2":
                     return "330.5"
                 return "OK"
 
@@ -3964,14 +3963,14 @@ def selftest() -> None:
             'A\\r\\n\\x07""\\n'
         )
         assert _correct_csv_export(os.path.join(tmp, "yapd_missing.csv")) == 0
-        # read_file returns text bare (no wrapper line); a trailing
-        # note appears only when offset/truncation applies
+        # read_file returns pure content - no wrapper, no note - so
+        # chunked reads stay exact (offset += len(answer))
         out = run_tool("read_file", {"path": rb_csv})
         assert out == "a,b\n1,2\n"
         out = run_tool(
             "read_file", {"path": rb_csv, "offset": 2, "max_chars": 100}
         )
-        assert out.startswith("b\n1,2\n") and "[read_file:" in out
+        assert out == "b\n1,2\n"
 
         class _RecApi:
             def __init__(self):
@@ -4168,6 +4167,14 @@ def selftest() -> None:
         assert api_rec.timeouts[-1] == 600
         run_api_tool("is_triggered", {}, api_rec)
         assert api_rec.timeouts[-1] == 10
+        # file tools too: a large export can take minutes to answer
+        to_rec = _RecApi()
+        run_api_tool(
+            "export_between_cursors",
+            {"path": os.path.join(tmp, "yapd_to.csv")},
+            to_rec,
+        )
+        assert to_rec.timeouts[0] == LONG_TIMEOUT
         # set_trigger_cursor resolves like the other time tools
         run_api_tool("set_trigger_cursor", {"time": 1.5}, api_rec)
         assert api_rec.sent[-1] == "SetTriggerCursor 1.5"
@@ -4209,13 +4216,13 @@ def selftest() -> None:
         out = run_tool(
             "read_file", {"path": big, "offset": 490, "max_chars": 100}
         )
-        # text comes back bare, with a trailing note for the offset
-        assert out.startswith("0123456789")
-        assert "from char 490" in out and "[read_file:" in out
-        out = run_tool("read_file", {"path": png, "offset": 8})
-        assert "from byte 8" in out
+        # pure content, exactly the requested window - no synthetic
+        # newline, so offset += len(answer) is exact
+        assert out == "0123456789"
+        bin_out = run_tool("read_file", {"path": png, "offset": 8})
+        assert "from byte 8" in bin_out
         assert (
-            base64.b64decode(out.split(":\n", 1)[1], validate=True)
+            base64.b64decode(bin_out.split(":\n", 1)[1], validate=True)
             == payload[8:]
         )
         # an existing file outside the scratch root, not written by a
@@ -4668,6 +4675,19 @@ def selftest() -> None:
         dict(request, params={"name": "no_such_tool", "arguments": {}})
     )
     assert reply["result"]["isError"] is True
+    # read_file through handle(): the content arrives as pure text
+    handle_csv = os.path.join(_tmp_root(), "yapd_handle-%d.csv" % os.getpid())
+    with open(handle_csv, "w", encoding="utf-8") as fh:
+        fh.write("a,b\n1,2\n")
+    reply = call_rpc(
+        dict(
+            request,
+            params={"name": "read_file", "arguments": {"path": handle_csv}},
+        )
+    )
+    assert reply["result"]["content"][0]["text"] == "a,b\n1,2\n"
+    assert "structuredContent" not in reply["result"]
+    os.remove(handle_csv)
 
 
 def _reachable(host: str, port: int) -> bool:

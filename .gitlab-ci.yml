@@ -1,0 +1,10 @@
+stages:
+  - test
+
+selftest:
+  stage: test
+  image: python:3.13
+  script:
+    - python3 yactivepro_mcp.py --selftest
+    - python3 ActiveProApi.py --help > /dev/null
+    - python3 ActiveProApi.py --generate-bash-completion > /dev/null

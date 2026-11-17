@@ -113,21 +113,24 @@ under `/tmp` plus paths previously written by those tools (persisted in
 
 Exports between the X1/X2 cursors answer with the range actually exported
 (`exported range X1=... X2=...`; `zoom_from` changes the view only, it does
-not move the cursors). The export tools also take `decoded_only` (drop the
-raw rows: `.csv` LOGIC/ANALOG device rows and GEN channel rows - detected
-UART bytes, the packet is in the UART_PACKETS row; `.aft` L/AN source rows)
-and `device_filter` (keep only the listed rows; `.csv` matches the Device
-or Channel column, e.g. `device_filter=UART_PACKETS` for packet transaction
+not move the cursors); if the application reset the cursors (e.g. after an
+app restart), the answer adds a warning with the last values set through
+this server. The export tools also take `decoded_only` (drop the raw rows:
+`.csv` LOGIC/ANALOG device rows and GEN channel rows - detected UART bytes,
+the packet is in the UART_PACKETS row; `.aft` L/AN source rows) and
+`device_filter` (keep only the listed rows; `.csv` matches the Device or
+Channel column, e.g. `device_filter=UART_PACKETS` for packet transaction
 rows only, `UART_PACKETS,GEN` to also keep the detected UART byte rows;
 `.aft` source letter). The raw export written by `export_between_cursors`
 encodes non-printable bytes as `[HH]` hex markers and packet ends as
-`=EoP`; the server corrects the .csv file in place (decodes them to the
-character or a `\r`/`\n`/`\xHH` escape); disable with
-`--no-correct-csv-export` (or `YAPD_MCP_CORRECT_CSV_EXPORT=0`). `search`
-takes an optional `from` timestamp: the search starts there and the shared
-cursor is restored afterwards, so repeated or parallel searches are
-independent; it scans the decoded device rows (packet presenter text), not
-the raw byte rows.
+`=EoP`; the server corrects the .csv file in place (decodes them inside the
+field values to the character or a `\r`/`\n`/`\xHH` escape and
+re-serializes with the csv module, so the quoting stays valid); disable
+with `--no-correct-csv-export` (or `YAPD_MCP_CORRECT_CSV_EXPORT=0`).
+`search` takes an optional `from` timestamp: the search starts there and
+the shared cursor is restored afterwards, so repeated or parallel searches
+are independent; it scans the decoded device rows (packet presenter text),
+not the raw byte rows.
 
 On startup and on every new MCP connection (`initialize`), the server
 probes the Active-Pro application and reports its reachability in the

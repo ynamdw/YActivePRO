@@ -52,9 +52,13 @@ this document carries only the project-specific material.
   timeout was misreported as "application not reachable".
 - The raw `ExportBetweenCursors` .csv encodes non-printable bytes as `[HH]`
   hex markers and packet ends as `=EoP`; the export tool corrects the
-  written file in place (decode to the character or a `\r`/`\n`/ `\xHH`
-  escape) — same correction in `ActiveProApi.py`. On by default;
+  written file in place: markers are decoded inside the parsed field values
+  and the file is re-serialized with the csv module, so quoting stays valid
+  even for `","` sequences — same in `ActiveProApi.py`. On by default;
   `--no-correct-csv-export` / `YAPD_MCP_CORRECT_CSV_EXPORT=0` disables.
+- X1/X2 cursors set through the server are persisted
+  (`$STATE_DIR/cursors.json`); a between-cursors export answer warns when
+  the app's cursors differ from them (app restart reset them).
 
 ## Configuration reference
 

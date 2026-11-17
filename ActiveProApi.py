@@ -23,6 +23,7 @@ limitations under the License.
 # pylint: disable=too-many-lines,invalid-name
 
 import argparse
+import csv
 import logging
 import os
 import re
@@ -110,6 +111,43 @@ def decode_csv_export_text(text):
         return "\\x%02X" % value
 
     return _CSV_HEX_BYTE.sub(repl, text).replace("=EoP", "\\n")
+
+
+# App .csv lines are `seconds,"output","device","channel"`; the device
+# and channel fields never contain quotes, so the last two `","`
+# boundaries are field boundaries even when the output field carries
+# literal (unescaped) quotes.
+_APP_CSV_TAIL = re.compile(r'^(".*"),"([^"]*)","([^"]*)"$')
+
+
+def repair_app_quoting(line):
+    """
+    Double the literal quotes inside the output field of a raw app CSV
+    line (the application does not CSV-escape them). Returns None when
+    the line does not match the app field layout.
+
+    Args:
+        line (str): One raw line of the export.
+
+    Returns:
+        str or None: The repaired line, or None.
+    """
+    head, sep, rest = line.partition(",")
+    if not sep:
+        return None
+    match = _APP_CSV_TAIL.match(rest)
+    if not match:
+        return None
+    output = match.group(1)
+    if len(output) < 2 or not output.startswith('"'):
+        return None
+    inner = output[1:-1].replace('"', '""')
+    return '{},"{}","{}","{}"'.format(
+        head,
+        inner,
+        match.group(2),
+        match.group(3),
+    )
 
 
 class ActiveProAPI:  # pylint: disable=too-many-public-methods
@@ -740,16 +778,18 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
 
     def correct_csv_export(self, filename):
         """
-        Correct the content of an exported CSV file in place: decode the
-        [HH] hex byte markers and the =EoP packet end markers of the raw
-        export (see decode_csv_export_text).
+        Correct the content of an exported CSV file in place: repair the
+        output-field quoting (see repair_app_quoting), decode the [HH]
+        hex byte markers and the =EoP packet end markers (see
+        decode_csv_export_text) and re-serialize with the csv module, so
+        every row stays valid CSV.
 
         Args:
             filename (str): The export file name.
 
         Returns:
-            int: The number of corrected lines (0 when the file carries
-                no markers or does not exist).
+            int: The number of corrected lines (0 when the file has no
+                markers and needs no repair, or does not exist).
         """
         local = os.path.abspath(
             filename if os.path.splitext(filename)[1] else filename + ".csv"
@@ -757,18 +797,22 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
         if not os.path.isfile(local):
             return 0
         with open(local, encoding="utf-8", errors="replace") as fh:
-            content = fh.read()
-        corrected = decode_csv_export_text(content)
-        if corrected == content:
+            raw_lines = fh.read().splitlines()
+        changed = 0
+        out_lines = []
+        for line in raw_lines:
+            repaired = repair_app_quoting(line)
+            if repaired is not None:
+                line = repaired
+            decoded = decode_csv_export_text(line)
+            if decoded != line or repaired is not None:
+                changed += 1
+            out_lines.append(decoded)
+        if not changed:
             return 0
-        changed = sum(
-            1
-            for line in content.splitlines()
-            if _CSV_HEX_BYTE.search(line) or "=EoP" in line
-        )
         tmp = local + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(corrected)
+        with open(tmp, "w", newline="", encoding="utf-8") as fh:
+            csv.writer(fh).writerows(csv.reader(out_lines))
         os.replace(tmp, local)
         return changed
 

@@ -124,6 +124,9 @@ CONF: Dict[str, Any] = {
     "written_files_file": os.path.join(
         env("YAPD_MCP_STATE_DIR", "yapd-mcp-state"), "written_files.json"
     ),
+    "cursors_file": os.path.join(
+        env("YAPD_MCP_STATE_DIR", "yapd-mcp-state"), "cursors.json"
+    ),
     "feedback_file": env(
         "YAPD_MCP_FEEDBACK_FILE",
         os.path.join(
@@ -386,7 +389,9 @@ Exports - the way to hand data over for analysis:
 The export range is always the X1/X2 cursors: set them with
 set_cursor_x1/set_cursor_x2 (zoom_from frames the view only, it does
 not move the cursors), and every export answer echoes the range
-actually exported ("exported range X1=... X2=...").
+actually exported ("exported range X1=... X2=..."); when the
+application reset the cursors (e.g. after an app restart), the answer
+adds a warning with the last values set through this server.
 - export_between_cursors: .csv of the data between the X1/X2 cursors.
   The .csv has three row levels in the Device column: UART_PACKETS
   transaction rows (e.g. 'TX=AT+CRESET[D]=EoP'), decoded text rows
@@ -394,8 +399,9 @@ actually exported ("exported range X1=... X2=...").
   Device, Channel). For the decoded serial transactions, use this
   .csv - not the .aft, which is the byte-level trace. The raw export
   encodes non-printable bytes as [HH] hex markers and packet ends as
-  =EoP; the server decodes those markers in the written file (disable
-  with --no-correct-csv-export).
+  =EoP; the server decodes those markers inside the field values and
+  re-serializes the file with the csv module, so the quoting stays
+  valid (disable with --no-correct-csv-export).
 - save_between_cursors: same range as a .active capture file;
   save_capture writes the whole capture; open_capture loads one back
   (a running capture is stopped first).
@@ -974,6 +980,30 @@ def record_written_file(path: str) -> None:
     os.replace(tmp, target)
 
 
+def load_last_cursors() -> Optional[Dict[str, float]]:
+    """The last X1/X2 cursor values set through this server
+    (persisted across server restarts)."""
+    try:
+        with open(CONF["cursors_file"], encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+    except (ValueError, OSError):
+        return None
+
+
+def save_last_cursor(name: str, value: float) -> None:
+    """Remember one cursor (x1/x2) set through this server, so an
+    export can warn when the application reset them (app restart)."""
+    data = load_last_cursors() or {}
+    data[name] = float(value)
+    target = CONF["cursors_file"]
+    os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+    tmp = target + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
+    os.replace(tmp, target)
+
+
 def check_read_path(path: str, tmp_root: str = "") -> str:
     """Absolute local path after enforcing the read policy: anything
     under the scratch root (/tmp), or a file written through a
@@ -1123,25 +1153,61 @@ def _decode_csv_export_text(text: str) -> str:
     return _CSV_HEX_BYTE.sub(repl, text).replace("=EoP", "\\n")
 
 
+# App .csv lines are `seconds,"output","device","channel"`; the device
+# and channel fields never contain quotes, so the last two `","`
+# boundaries are field boundaries even when the output field carries
+# literal (unescaped) quotes.
+_APP_CSV_TAIL = re.compile(r'^(".*"),"([^"]*)","([^"]*)"$')
+
+
+def _repair_app_quoting(line: str) -> Optional[str]:
+    """Double the literal quotes inside the output field of a raw app
+    .csv line (the application does not CSV-escape them). Returns None
+    when the line does not match the app field layout."""
+    head, sep, rest = line.partition(",")
+    if not sep:
+        return None
+    match = _APP_CSV_TAIL.match(rest)
+    if not match:
+        return None
+    output = match.group(1)
+    if len(output) < 2 or not output.startswith('"'):
+        return None
+    inner = output[1:-1].replace('"', '""')
+    return '{},"{}","{}","{}"'.format(
+        head,
+        inner,
+        match.group(2),
+        match.group(3),
+    )
+
+
 def _correct_csv_export(local_path: str) -> int:
-    """Correct an exported .csv in place (see _decode_csv_export_text).
-    Returns the number of corrected lines (0 when the file carries no
-    markers or does not exist)."""
+    """Correct an exported .csv in place: repair the output-field
+    quoting (see _repair_app_quoting), decode the [HH] hex byte and
+    =EoP markers (see _decode_csv_export_text) and re-serialize with
+    the csv module, so every row stays valid CSV. Returns the number
+    of corrected lines (0 when the file has no markers and needs no
+    repair, or does not exist)."""
     if not os.path.isfile(local_path):
         return 0
     with open(local_path, encoding="utf-8", errors="replace") as fh:
-        content = fh.read()
-    corrected = _decode_csv_export_text(content)
-    if corrected == content:
+        raw_lines = fh.read().splitlines()
+    changed = 0
+    out_lines = []
+    for line in raw_lines:
+        repaired = _repair_app_quoting(line)
+        if repaired is not None:
+            line = repaired
+        decoded = _decode_csv_export_text(line)
+        if decoded != line or repaired is not None:
+            changed += 1
+        out_lines.append(decoded)
+    if not changed:
         return 0
-    changed = sum(
-        1
-        for line in content.splitlines()
-        if _CSV_HEX_BYTE.search(line) or "=EoP" in line
-    )
     tmp = local_path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write(corrected)
+    with open(tmp, "w", newline="", encoding="utf-8") as fh:
+        csv.writer(fh).writerows(csv.reader(out_lines))
     os.replace(tmp, local_path)
     return changed
 
@@ -2117,7 +2183,12 @@ def run_api_tool(name: str, arguments: Dict[str, Any], api) -> str:
             value = _from_capture_end(
                 value, float(api.send_command("GetCaptureTime"))
             )
-        return api.send_command("{} {}".format(TIME_TOOLS[name], value))
+        response = api.send_command("{} {}".format(TIME_TOOLS[name], value))
+        if name in ("set_cursor_x1", "set_cursor_x2"):
+            # remember the cursor: an export warns when the application
+            # reset it (e.g. after an app restart)
+            save_last_cursor(name.rsplit("_", 1)[-1], value)
+        return response
     if name == "zoom_from":
         start = float(arguments["start"])
         end = float(arguments["end"])
@@ -2213,6 +2284,25 @@ def run_api_tool(name: str, arguments: Dict[str, Any], api) -> str:
                             x1,
                             x2,
                         )
+                        last = load_last_cursors() or {}
+                        if (
+                            "x1" in last
+                            and "x2" in last
+                            and (
+                                abs(float(x1) - last["x1"]) > 1e-9
+                                or abs(float(x2) - last["x2"]) > 1e-9
+                            )
+                        ):
+                            # the application reset the cursors (e.g. app
+                            # restart): a stale/default range must not
+                            # silently produce a wrong deliverable
+                            response += (
+                                " (warning: X1/X2 differ from the last"
+                                " values set through this server (X1=%s"
+                                " X2=%s); the application may have"
+                                " restarted and reset the cursors)"
+                                % (last["x1"], last["x2"])
+                            )
                 record_written_file(local_path)
                 device_filter = arguments.get("device_filter")
                 if arguments.get("decoded_only") or device_filter:
@@ -3684,6 +3774,7 @@ def selftest() -> None:
     old_secret_file = CONF["session_secret_file"]
     old_feedback = CONF["feedback_file"]
     old_written = CONF["written_files_file"]
+    old_cursors = CONF["cursors_file"]
     CONF["session_secret"] = "selftest-secret"
     tmp = os.path.join(_tmp_root(), "yactivepro-selftest-%d" % os.getpid())
     os.makedirs(tmp, exist_ok=True)
@@ -3692,6 +3783,7 @@ def selftest() -> None:
     CONF["session_secret_file"] = os.path.join(tmp, "session_secret")
     CONF["feedback_file"] = os.path.join(tmp, "feedback.md")
     CONF["written_files_file"] = os.path.join(tmp, "written_files.json")
+    CONF["cursors_file"] = os.path.join(tmp, "cursors.json")
     try:
         # credentials persistence: create, load, delete
         assert load_credentials() is None
@@ -3917,15 +4009,46 @@ def selftest() -> None:
             "export_between_cursors", {"path": range_csv}, _RangeApi()
         )
         assert "exported range X1=328.5..X2=330.5" in out
+        # cursors set through the server are persisted; an export warns
+        # when the application reset them (e.g. after an app restart)
+        run_api_tool("set_cursor_x1", {"time": 10}, _OkApi())
+        run_api_tool("set_cursor_x2", {"time": 20}, _OkApi())
+        assert load_last_cursors() == {"x1": 10.0, "x2": 20.0}
+
+        class _MatchApi(_OkApi):
+            def send_command(self, _command, **_kwargs):
+                """Answer the stored cursor positions."""
+                if _command == "GetCursorX1":
+                    return "10"
+                if _command == "GetCursorX2":
+                    return "20"
+                return "OK"
+
+        out = run_api_tool(
+            "export_between_cursors", {"path": range_csv}, _MatchApi()
+        )
+        assert "exported range X1=10..X2=20" in out
+        assert "warning" not in out
+        out = run_api_tool(
+            "export_between_cursors", {"path": range_csv}, _RangeApi()
+        )
+        assert "exported range X1=328.5..X2=330.5" in out
+        assert "warning" in out and "X1=10.0 X2=20.0" in out
         # csv export correction: the [HH] hex byte and =EoP markers of
-        # the raw export are decoded in the written file (flag off:
-        # the raw markers stay)
+        # the raw export are decoded inside the field values and the
+        # file is re-serialized with the csv module, so quoting stays
+        # valid (flag off: the raw markers stay)
         fix_csv = os.path.join(tmp, "yapd_fix.csv")
         with open(fix_csv, "w", encoding="utf-8") as fh:
             fh.write(
                 "Seconds, Output, Device, Channel\n"
                 '1.0,"TX=AT+CRESET[D]=EoP","UART_PACKETS","0"\n'
                 '1.1,"[41][42][0A]","MyUART B","2"\n'
+                # quote-comma-quote sequence: must stay one field
+                '2.0,"AT+CGDCONT=2,IPV4V6[22][2C][22]IMS[0D]","C","Ch 4"\n'
+                # literal (unescaped) quotes in the output field, as the
+                # app emits them: must be repaired to valid CSV
+                '3.0,"AT+CGDCONT=2,"IPV4V6","IMS"[0D]","MyUART C","Ch 4"\n'
             )
         old_fix = CONF["correct_csv_export"]
         assert isinstance(old_fix, bool)
@@ -3934,11 +4057,19 @@ def selftest() -> None:
             out = run_api_tool(
                 "export_between_cursors", {"path": fix_csv}, _OkApi()
             )
+            with open(fix_csv, newline="", encoding="utf-8") as fh:
+                fixed_rows = list(csv.reader(fh))
+            assert "csv corrected: 4 lines" in out
+            assert fixed_rows[1][1] == "TX=AT+CRESET\\r\\n"
+            assert fixed_rows[2][1] == "AB\\n"
             with open(fix_csv, encoding="utf-8") as fh:
-                fixed = fh.read()
-            assert "csv corrected: 2 lines" in out
-            assert "TX=AT+CRESET\\r\\n" in fixed and "[D]" not in fixed
-            assert '"AB\\n"' in fixed
+                assert "[D]" not in fh.read()
+            # the quote-comma-quote row still parses as 4 fields
+            assert len(fixed_rows[3]) == 4
+            assert fixed_rows[3][1] == 'AT+CGDCONT=2,IPV4V6","IMS\\r'
+            # the literal-quote row is repaired to valid CSV too
+            assert len(fixed_rows[4]) == 4
+            assert fixed_rows[4][1] == 'AT+CGDCONT=2,"IPV4V6","IMS"\\r'
             with open(fix_csv, "w", encoding="utf-8") as fh:
                 fh.write('1.0,"[0D]","X","0"\n')
             CONF["correct_csv_export"] = False
@@ -4365,6 +4496,7 @@ def selftest() -> None:
         CONF["session_secret_file"] = old_secret_file
         CONF["feedback_file"] = old_feedback
         CONF["written_files_file"] = old_written
+        CONF["cursors_file"] = old_cursors
 
         shutil.rmtree(tmp, ignore_errors=True)
         shutil.rmtree(selftest_tmp + "-outside", ignore_errors=True)

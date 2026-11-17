@@ -413,14 +413,18 @@ actually exported ("exported range X1=... X2=...").
   snapshot (test name, firmware version, what to investigate) - set
   it before an automated run.
 - export_ai_snapshot and export_between_cursors take decoded_only=true
-  to write only the decoded device rows (A-D); the logic/analog rows
-  are dropped from the file, which makes AI analysis much cheaper.
-  device_filter="LABEL,..." keeps only the listed rows instead:
-  .csv filters on the Device column (e.g. device_filter=UART_PACKETS
-  keeps only the packet transaction rows), .aft on the source letter
+  to write only the decoded rows; the raw rows are dropped from the
+  file, which makes AI analysis much cheaper: in the .csv the
+  LOGIC/ANALOG device rows and the GEN channel rows (detected UART
+  bytes - the whole packet is reported in the UART_PACKETS row), in
+  the .aft the L/AN source rows. device_filter="LABEL,..." keeps only
+  the listed rows instead: .csv matches the Device or Channel column
+  (device_filter=UART_PACKETS keeps only the packet transaction rows,
+  device_filter="UART_PACKETS,GEN" also keeps the detected UART byte
+  rows, "LOGIC"/"ANALOG" select the raw rows), .aft the source letter
   (A-D). The answer reports how many rows were dropped; the count is
-  per format (.aft: L/AN source rows, .csv: LOGIC/ANALOG device rows),
-  so the two formats report different counts for the same range.
+  per format (.aft: L/AN source rows, .csv: LOGIC/ANALOG/GEN rows), so
+  the two formats report different counts for the same range.
   A window .aft export may still start with one context row per
   channel (the last event before X1; timestamp < X1).
 File paths are used on the machine running the Active-Pro
@@ -1026,6 +1030,10 @@ def read_file(path: str, arguments: Dict[str, Any]) -> str:
 # Source/device labels of the raw (non-decoded) rows in exports.
 RAW_SOURCES_AFT = frozenset({"L", "AN"})
 RAW_DEVICES_CSV = frozenset({"LOGIC", "ANALOG", "AN"})
+# Channel-column values of raw rows in a .csv export: GEN rows are the
+# detected UART bytes (the whole packet is reported separately in the
+# UART_PACKETS rows).
+RAW_CHANNELS_CSV = frozenset({"GEN"})
 
 
 def _filter_rows_aft(
@@ -1063,9 +1071,10 @@ def _filter_rows_aft(
 def _filter_rows_csv(
     path: str, drop_raw: bool = True, keep: Optional[frozenset] = None
 ) -> int:
-    """Rewrite an exported .csv in place: drop rows whose Device column
-    is LOGIC/ANALOG/AN (drop_raw) or not listed in `keep` (when given).
-    Returns the number of dropped rows."""
+    """Rewrite an exported .csv in place. A data row is dropped when
+    its Device column is LOGIC/ANALOG/AN or its Channel column is GEN
+    (drop_raw), or when neither column is listed in `keep` (when
+    given). Returns the number of dropped rows."""
     with open(path, newline="", encoding="utf-8", errors="replace") as src:
         rows = list(csv.reader(src))
     dropped = 0
@@ -1075,8 +1084,14 @@ def _filter_rows_csv(
         for index, row in enumerate(rows):
             if index and len(row) >= 4:  # row 0 is the header, keep it
                 device = row[2].strip()
-                if (drop_raw and device in RAW_DEVICES_CSV) or (
-                    keep is not None and device not in keep
+                channel = row[3].strip()
+                if drop_raw and (
+                    device in RAW_DEVICES_CSV or channel in RAW_CHANNELS_CSV
+                ):
+                    dropped += 1
+                    continue
+                if keep is not None and (
+                    device not in keep and channel not in keep
                 ):
                     dropped += 1
                     continue
@@ -1287,9 +1302,11 @@ _P_MAX_CHARS = (
 _P_DECODED_ONLY = (
     "decoded_only",
     "boolean",
-    "drop the logic/analog rows from the export, keeping only the "
-    "decoded device data (A-D); the written file and a read_back answer "
-    "are both filtered",
+    "drop the raw rows from the export, keeping only the decoded data; "
+    "the written file and a read_back answer are both filtered (.csv: "
+    "LOGIC/ANALOG device rows and GEN channel rows - detected UART "
+    "bytes, the whole packet is in the UART_PACKETS rows; .aft: L/AN "
+    "source rows)",
     False,
     None,
 )
@@ -1298,9 +1315,12 @@ _P_DEVICE_FILTER = (
     "device_filter",
     "string",
     "comma-separated labels to keep in the export, all other data rows "
-    "are dropped: for .csv the Device column (e.g. 'UART_PACKETS' keeps "
-    "only the packet transaction rows), for .aft the source letter "
-    "(A-D); the written file and a read_back answer are both filtered",
+    "are dropped; the written file and a read_back answer are both "
+    "filtered. .csv: matches the Device or Channel column (e.g. "
+    "'UART_PACKETS' keeps only the packet transaction rows, "
+    "'UART_PACKETS,GEN' also keeps the detected UART byte rows, "
+    "'LOGIC'/'ANALOG' select the raw rows); .aft: the source letter "
+    "(A-D)",
     False,
     None,
 )
@@ -2214,7 +2234,7 @@ def run_api_tool(name: str, arguments: Dict[str, Any], api) -> str:
                         dropped = _filter_rows_csv(
                             local_path, drop_raw=drop_raw, keep=keep
                         )
-                        kind = "LOGIC/ANALOG device"
+                        kind = "LOGIC/ANALOG/GEN"
                     else:
                         dropped = 0
                         kind = ""
@@ -3800,7 +3820,9 @@ def selftest() -> None:
             fh.write(
                 "Seconds, Output, Device, Channel\n"
                 '1.0,"85","LOGIC","7to0"\n'
-                '1.1,"0x0D","MyUART B","2"\n'
+                '1.1,"A A","MyUART A","GEN"\n'
+                '1.2,"0x0D","MyUART B","Channel 2"\n'
+                '1.3,"TX=OK[0D]=EoP","MyUART A","UART_PACKETS"\n'
             )
         out = run_api_tool(
             "export_between_cursors",
@@ -3809,8 +3831,12 @@ def selftest() -> None:
         )
         with open(mini_csv, encoding="utf-8") as fh:
             kept = fh.read()
-        assert "dropped 1" in out and "7to0" not in kept
-        assert "0x0D" in kept
+        # decoded_only drops the LOGIC device rows and the GEN channel
+        # rows; the markers of the kept packet row are decoded first
+        assert "dropped 2" in out and "7to0" not in kept
+        assert ",GEN" not in kept
+        assert "0x0D" in kept and "UART_PACKETS" in kept
+        assert "TX=OK\\r\\n" in kept and "[0D]" not in kept
         # .aft export endpoint + the new command mappings
         assert PATH_TOOLS["export_ai_snapshot"] == ".aft"
         assert "export_ai_snapshot" in WRITE_PATH_TOOLS
@@ -3820,15 +3846,18 @@ def selftest() -> None:
                 assert "device_filter" in tool["inputSchema"]["properties"]
             if tool["name"] == "search":
                 assert "from" in tool["inputSchema"]["properties"]
-        # device_filter keeps only the listed rows (.csv: Device column)
+        # device_filter keeps only the listed rows (.csv: Device or
+        # Channel column - the row kind UART_PACKETS/GEN is in Channel)
         filt_csv = os.path.join(tmp, "yapd_filt.csv")
+        filt_rows = (
+            "Seconds, Output, Device, Channel\n"
+            '1.0,"TX=AT+CRESET[D]=EoP","MyUART A","UART_PACKETS"\n'
+            '1.1,"A A","MyUART A","GEN"\n'
+            '1.2,"0x0D","MyUART B","Channel 2"\n'
+            '1.3,"85","LOGIC","7to0"\n'
+        )
         with open(filt_csv, "w", encoding="utf-8") as fh:
-            fh.write(
-                "Seconds, Output, Device, Channel\n"
-                '1.0,"TX=AT+CRESET[D]=EoP","UART_PACKETS","0"\n'
-                '1.1,"0x0D","MyUART B","2"\n'
-                '1.2,"85","LOGIC","7to0"\n'
-            )
+            fh.write(filt_rows)
         out = run_api_tool(
             "export_between_cursors",
             {"path": filt_csv, "device_filter": "UART_PACKETS"},
@@ -3836,9 +3865,23 @@ def selftest() -> None:
         )
         with open(filt_csv, encoding="utf-8") as fh:
             kept = fh.read()
-        assert "dropped 2" in out and "kept UART_PACKETS" in out
-        assert "UART_PACKETS" in kept and "MyUART B" not in kept
-        assert "LOGIC" not in kept
+        assert "dropped 3" in out and "kept UART_PACKETS" in out
+        assert "UART_PACKETS" in kept and ",GEN" not in kept
+        assert "MyUART B" not in kept and "LOGIC" not in kept
+        assert "TX=AT+CRESET\\r\\n" in kept  # markers decoded first
+        # packets + detected UART bytes, but no logic/analog rows
+        with open(filt_csv, "w", encoding="utf-8") as fh:
+            fh.write(filt_rows)
+        out = run_api_tool(
+            "export_between_cursors",
+            {"path": filt_csv, "device_filter": "UART_PACKETS,GEN"},
+            _OkApi(),
+        )
+        with open(filt_csv, encoding="utf-8") as fh:
+            kept = fh.read()
+        assert "dropped 2" in out and "kept GEN,UART_PACKETS" in out
+        assert "UART_PACKETS" in kept and ",GEN" in kept
+        assert "LOGIC" not in kept and "MyUART B" not in kept
         # .aft: device_filter works on the source letter
         filt_aft = os.path.join(tmp, "yapd_filt.aft")
         with open(filt_aft, "w", encoding="utf-8") as fh:

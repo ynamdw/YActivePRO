@@ -36,8 +36,12 @@ this document carries only the project-specific material.
   `<path> (<N> bytes, base64):` header.
 - Server-side post-processing of an export (`decoded_only`, or
   `device_filter` to keep only listed rows) can shrink files massively; run
-  it after the backend write, before `read_back`. The answer of a
-  between-cursors export echoes the exported range (`X1=... X2=...`).
+  it after the backend write, before `read_back`. In a .csv, `decoded_only`
+  drops the LOGIC/ANALOG device rows and the GEN channel rows (detected
+  UART bytes; the packet is in the UART_PACKETS row); `device_filter`
+  matches the Device or Channel column (e.g. `UART_PACKETS`, or
+  `UART_PACKETS,GEN`). The answer of a between-cursors export echoes the
+  exported range (`X1=... X2=...`).
 - Text answers of `read_file` are bare content (no prefix wrapper; a
   trailing `[read_file: ...]` note only when offset/truncation applies);
   only binary answers carry the one-line base64 header.

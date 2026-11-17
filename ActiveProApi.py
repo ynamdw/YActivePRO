@@ -25,6 +25,7 @@ limitations under the License.
 import argparse
 import logging
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -77,6 +78,38 @@ ch.setFormatter(formatter)
 
 # Add the handler to the logger
 logger.addHandler(ch)
+
+# The raw .csv export encodes non-printable bytes as [HH] hex markers
+# and packet ends as =EoP; correct_csv_export decodes them in place.
+_CSV_HEX_BYTE = re.compile(r"\[([0-9A-Fa-f]{1,2})\]")
+
+
+def decode_csv_export_text(text):
+    """
+    Decode the markers of a raw Active-Pro .csv export: [HH] hex byte
+    markers become the printable character (a double quote is doubled,
+    as CSV requires) or a \\r / \\n / \\xHH escape, and =EoP (end of
+    packet) becomes \\n.
+
+    Args:
+        text (str): The raw CSV export content.
+
+    Returns:
+        str: The corrected content.
+    """
+
+    def repl(match):
+        value = int(match.group(1), 16)
+        if 0x20 <= value <= 0x7E:
+            char = chr(value)
+            return '""' if char == '"' else char
+        if value == 0x0D:
+            return "\\r"
+        if value == 0x0A:
+            return "\\n"
+        return "\\x%02X" % value
+
+    return _CSV_HEX_BYTE.sub(repl, text).replace("=EoP", "\\n")
 
 
 class ActiveProAPI:  # pylint: disable=too-many-public-methods
@@ -679,19 +712,65 @@ class ActiveProAPI:  # pylint: disable=too-many-public-methods
             f'SaveConfiguration {self.get_absolute_path(filename, ".active")}'
         )
 
-    def export_between_cursors(self, filename):
+    def export_between_cursors(self, filename, correct=True):
         """
         Export the data between the cursors to a file.
 
         Args:
             filename (str): The name of the file to export to.
+            correct (bool): When True (default), correct the exported
+                CSV file afterwards (see correct_csv_export).
 
         Returns:
             str: The response from the application ("NOTSTOPPED", FILENAME).
         """
-        return self.send_command(
+        response = self.send_command(
             f'ExportBetweenCursors {self.get_absolute_path(filename, ".csv")}'
         )
+        if correct:
+            changed = self.correct_csv_export(filename)
+            if changed:
+                logger.log(
+                    logging.INFO,
+                    "Corrected %d lines of the CSV export %s",
+                    changed,
+                    filename,
+                )
+        return response
+
+    def correct_csv_export(self, filename):
+        """
+        Correct the content of an exported CSV file in place: decode the
+        [HH] hex byte markers and the =EoP packet end markers of the raw
+        export (see decode_csv_export_text).
+
+        Args:
+            filename (str): The export file name.
+
+        Returns:
+            int: The number of corrected lines (0 when the file carries
+                no markers or does not exist).
+        """
+        local = os.path.abspath(
+            filename if os.path.splitext(filename)[1] else filename + ".csv"
+        )
+        if not os.path.isfile(local):
+            return 0
+        with open(local, encoding="utf-8", errors="replace") as fh:
+            content = fh.read()
+        corrected = decode_csv_export_text(content)
+        if corrected == content:
+            return 0
+        changed = sum(
+            1
+            for line in content.splitlines()
+            if _CSV_HEX_BYTE.search(line) or "=EoP" in line
+        )
+        tmp = local + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(corrected)
+        os.replace(tmp, local)
+        return changed
 
     def save_screenshot(self, filename):
         """
@@ -1107,6 +1186,12 @@ if __name__ == "__main__":
         help="Export data between cursors to a file",
     )
     parser.add_argument(
+        "--no-correct-csv-export",
+        action="store_true",
+        help="Do not correct the exported .csv file (decode the [HH] "
+        "hex byte and =EoP markers); the correction is on by default",
+    )
+    parser.add_argument(
         "--save-capture", metavar="FILE", help="Save capture to a file"
     )
     parser.add_argument(
@@ -1465,7 +1550,10 @@ if __name__ == "__main__":
             api.save_between_cursors(parsed_args.save_between_cursors)
 
         if parsed_args.export_between_cursors:
-            api.export_between_cursors(parsed_args.export_between_cursors)
+            api.export_between_cursors(
+                parsed_args.export_between_cursors,
+                correct=not parsed_args.no_correct_csv_export,
+            )
 
         if parsed_args.save_configuration:
             api.save_configuration(parsed_args.save_configuration)

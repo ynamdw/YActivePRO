@@ -64,14 +64,15 @@ work and direct access to the Active-PRO application:
 - `read_file`: read back a file on the server machine, e.g. the .csv
   written by `export_between_cursors`, the .aft written by
   `export_ai_snapshot` or the .png written by `save_screenshot` (text files
-  as text, truncated at `max_chars`; other files base64-encoded; binary
-  answers are standard base64 (RFC 4648) behind a one-line
-  `<path> (<N> bytes, base64):` header). `read_file` takes `offset`
-  (characters for text, bytes for binary) plus `max_chars` for chunked
-  reads of large exports. The save/export tools also take `read_back: true`
-  (plus `max_chars`/`offset`) to return the written file's content in the
-  same tool answer, without a separate `read_file` call;
-  `export_ai_snapshot` and `export_between_cursors` additionally take
+  as bare text - no wrapper line, so the answer can be saved as-is, with a
+  trailing `[read_file: ...]` note only when `offset`/truncation applies;
+  other files base64-encoded; binary answers are standard base64 (RFC 4648)
+  behind a one-line `<path> (<N> bytes, base64):` header). `read_file`
+  takes `offset` (characters for text, bytes for binary) plus `max_chars`
+  for chunked reads of large exports. The save/export tools also take
+  `read_back: true` (plus `max_chars`/`offset`) to return the written
+  file's content in the same tool answer, without a separate `read_file`
+  call; `export_ai_snapshot` and `export_between_cursors` additionally take
   `decoded_only: true` to drop the logic/analog rows and write decoded
   device data only. `search` moves past each match itself and re-finds
   inside the same decoded item are skipped server-side, so repeated calls
@@ -109,6 +110,21 @@ overwritten (use e.g. `/tmp/yapd_export.csv`); any other path is only
 writable when the file does not exist yet. `read_file` accepts any path
 under `/tmp` plus paths previously written by those tools (persisted in
 `$YAPD_MCP_STATE_DIR/written_files.json`).
+
+Exports between the X1/X2 cursors answer with the range actually exported
+(`exported range X1=... X2=...`; `zoom_from` changes the view only, it does
+not move the cursors). The export tools also take `decoded_only` (drop the
+logic/analog rows) and `device_filter` (keep only the listed rows: `.csv`
+Device column, e.g. `device_filter=UART_PACKETS` for packet transaction
+rows only; `.aft` source letter). The raw export written by
+`export_between_cursors` encodes non-printable bytes as `[HH]` hex markers
+and packet ends as `=EoP`; the server corrects the .csv file in place
+(decodes them to the character or a `\r`/`\n`/`\xHH` escape); disable with
+`--no-correct-csv-export` (or `YAPD_MCP_CORRECT_CSV_EXPORT=0`). `search`
+takes an optional `from` timestamp: the search starts there and the shared
+cursor is restored afterwards, so repeated or parallel searches are
+independent; it scans the decoded device rows (packet presenter text), not
+the raw byte rows.
 
 On startup and on every new MCP connection (`initialize`), the server
 probes the Active-Pro application and reports its reachability in the
@@ -297,6 +313,7 @@ Active-Pro.
 | `YAPD_MCP_SESSION_TTL_HOURS`       | `8`                        | access token lifetime                             |
 | `YAPD_MCP_OAUTH_REFRESH_TTL_HOURS` | `720`                      | refresh token lifetime                            |
 | `YAPD_MCP_FEEDBACK_FILE`           | `feedback.md` in state dir | feedback Markdown file                            |
+| `YAPD_MCP_CORRECT_CSV_EXPORT`      | `1` (on)                   | correct the exported .csv ([HH]/=EoP markers)     |
 
 ## Disclaimer
 

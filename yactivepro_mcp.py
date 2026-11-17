@@ -101,6 +101,8 @@ def env(name: str, default: str = "") -> str:
 
 CONF: Dict[str, Any] = {
     "app_host": env("YAPD_MCP_HOST", "localhost"),
+    "correct_csv_export": env("YAPD_MCP_CORRECT_CSV_EXPORT", "1").lower()
+    not in ("0", "false", "no", "off"),
     "bind": env("YAPD_MCP_BIND", "127.0.0.1"),
     "http_port": int(env("YAPD_MCP_HTTP_PORT", "37880")),
     "public_port": int(env("YAPD_MCP_PUBLIC_PORT", "0")),
@@ -381,15 +383,29 @@ zoom_from):
   number of samples captured.
 
 Exports - the way to hand data over for analysis:
-- export_between_cursors: .csv of the data between the X1/X2 cursors;
-  set the cursors first (or frame the range with zoom_from).
+The export range is always the X1/X2 cursors: set them with
+set_cursor_x1/set_cursor_x2 (zoom_from frames the view only, it does
+not move the cursors), and every export answer echoes the range
+actually exported ("exported range X1=... X2=...").
+- export_between_cursors: .csv of the data between the X1/X2 cursors.
+  The .csv has three row levels in the Device column: UART_PACKETS
+  transaction rows (e.g. 'TX=AT+CRESET[D]=EoP'), decoded text rows
+  per device channel, and raw byte rows (columns: Seconds, Output,
+  Device, Channel). For the decoded serial transactions, use this
+  .csv - not the .aft, which is the byte-level trace. The raw export
+  encodes non-printable bytes as [HH] hex markers and packet ends as
+  =EoP; the server decodes those markers in the written file (disable
+  with --no-correct-csv-export).
 - save_between_cursors: same range as a .active capture file;
   save_capture writes the whole capture; open_capture loads one back
   (a running capture is stopped first).
 - save_screenshot: .png of the current view.
 - export_ai_snapshot: the AI Snapshot (.aft firmware trace) of the
-  X1/X2 range - all decoded data plus the Analysis Context, the
-  format to analyze; read the .aft back with read_file (text).
+  X1/X2 range - byte-level, one row per event ("timestamp, source,
+  channel, data"), plus the Analysis Context; read the .aft back
+  with read_file (text). The .aft and the .csv are different formats:
+  .aft is the byte-level trace, .csv carries the transaction/decoded/
+  byte row levels described above.
 - save_configuration / open_configuration: save/load the .active
   configuration file.
 - append_analysis_context / get_analysis_context /
@@ -399,6 +415,12 @@ Exports - the way to hand data over for analysis:
 - export_ai_snapshot and export_between_cursors take decoded_only=true
   to write only the decoded device rows (A-D); the logic/analog rows
   are dropped from the file, which makes AI analysis much cheaper.
+  device_filter="LABEL,..." keeps only the listed rows instead:
+  .csv filters on the Device column (e.g. device_filter=UART_PACKETS
+  keeps only the packet transaction rows), .aft on the source letter
+  (A-D). The answer reports how many rows were dropped; the count is
+  per format (.aft: L/AN source rows, .csv: LOGIC/ANALOG device rows),
+  so the two formats report different counts for the same range.
   A window .aft export may still start with one context row per
   channel (the last event before X1; timestamp < X1).
 File paths are used on the machine running the Active-Pro
@@ -409,20 +431,27 @@ file does not exist yet. Set read_back=true on the save/export tool
 to get the file content in the same answer (text for .csv and .aft,
 base64 for .png, truncated at max_chars); without it, read the export
 back with read_file, which accepts any path under /tmp or a path
-written by a save/export tool. Binary files come as a one-line header
+written by a save/export tool. Text content comes back bare - no
+wrapper line - so the answer can be saved as-is; a trailing
+"[read_file: ...]" note appears only when offset or truncation
+applies. Binary files come as a one-line header
 "<path> (<N> bytes, base64):" followed by standard base64 (RFC 4648),
 so strip the header before base64 -d. Page through large text exports
 with offset (characters) + max_chars; for binary files offset counts
 bytes.
 
 Find, then inspect: search returns the timestamp of a string in the
-captured data; consecutive search calls enumerate all occurrences
-(the application moves past each match itself, at full internal
-precision - do not move the cursor between calls; re-finds inside the
-same decoded item are skipped server-side, so one occurrence returns
-one hit). The returned timestamp is rounded to 0.1 ms, so when you
-set_cursor_current to a returned timestamp manually, add 0.0001 s to
-skip that match. Give a timestamp to set_cursor_current or use it in
+decoded device data (packet presenter rows; strings that exist only
+in raw byte rows return NOTFOUND); consecutive search calls enumerate
+all occurrences (the application moves past each match itself, at
+full internal precision - do not move the cursor between calls;
+re-finds inside the same decoded item are skipped server-side, so one
+occurrence returns one hit). The returned timestamp is rounded to
+0.1 ms, so when you set_cursor_current to a returned timestamp
+manually, add 0.0001 s to skip that match. Pass from=<timestamp> to
+search from a given time without touching the shared cursor (it is
+restored after the call), which makes repeated or parallel searches
+independent. Give a timestamp to set_cursor_current or use it in
 a zoom_from range to frame the moment, then export.
 
 Triggers and the post-capture pipeline: set_trigger_mode /
@@ -447,10 +476,11 @@ or a device port, set_device_mode / set_device_setting pick the
 decoder mode and rate of a device port (A-D), set_device_visibility
 shows or hides a device's rows.
 
-Zoom and cursors change the view and the export range, not the
-captured data. new_capture clears for a fresh recording; the capture
-note (append_note, clear_note, show_notes) carries the remarks to
-remember. exit closes the application.
+Zoom and cursors change the view, not the captured data; the export
+range is the X1/X2 cursors regardless of the zoom. new_capture clears
+for a fresh recording; the capture note (append_note, clear_note,
+show_notes) carries the remarks to remember. exit closes the
+application.
 
 The full command reference behind the tools:
 get_docs {"page": "automation-api"}.""",
@@ -844,6 +874,18 @@ WRITE_PATH_TOOLS = frozenset(
     }
 )
 
+# Tools whose exported range is the X1/X2 cursors: on success the answer
+# echoes the range actually exported (zoom_from changes the view only,
+# it does not move the cursors).
+CURSOR_RANGE_TOOLS = frozenset(
+    {"export_between_cursors", "export_ai_snapshot", "save_between_cursors"}
+)
+
+# Export tools that take the decoded_only/device_filter row filters.
+EXPORT_FILTER_TOOLS = frozenset(
+    {"export_ai_snapshot", "export_between_cursors"}
+)
+
 # Extensions returned as text by the read_file tool; anything else is
 # returned base64-encoded.
 READ_TEXT_EXTENSIONS = frozenset(
@@ -954,19 +996,18 @@ def read_file(path: str, arguments: Dict[str, Any]) -> str:
             if offset:
                 fh.read(offset)  # skip the first offset chars
             text = fh.read(max_chars + 1)
-        truncated = (
-            " (truncated at %d chars)" % max_chars
-            if len(text) > max_chars
-            else ""
-        )
-        at = ", from char %d" % offset if offset else ""
-        return "%s (%d bytes%s)%s:\n%s" % (
-            absolute,
-            size,
-            at,
-            truncated,
-            text[:max_chars],
-        )
+        truncated = len(text) > max_chars
+        body = text[:max_chars]
+        if offset or truncated:
+            # trailing note only: a prefix wrapper line gets copied into
+            # deliverables when an agent saves the answer as-is
+            body += "\n[read_file: %s (%d bytes%s%s)]" % (
+                absolute,
+                size,
+                ", from char %d" % offset if offset else "",
+                ", truncated at %d chars" % max_chars if truncated else "",
+            )
+        return body
     if size - offset > READ_BINARY_MAX_BYTES:
         raise ValueError(
             "file too large to return as base64 from offset %d "
@@ -987,10 +1028,13 @@ RAW_SOURCES_AFT = frozenset({"L", "AN"})
 RAW_DEVICES_CSV = frozenset({"LOGIC", "ANALOG", "AN"})
 
 
-def _drop_raw_rows_aft(path: str) -> int:
-    """Remove logic/analog (L/AN) event rows from an .aft file in
-    place, keeping the header sections and the column header.
-    Returns the number of dropped rows."""
+def _filter_rows_aft(
+    path: str, drop_raw: bool = True, keep: Optional[frozenset] = None
+) -> int:
+    """Rewrite an .aft export in place: drop data rows whose source is
+    a raw L/AN row (drop_raw) or not listed in `keep` (when given).
+    Header sections and the column header are kept. Returns the number
+    of dropped rows."""
     with open(path, encoding="utf-8", errors="replace") as fh:
         lines = fh.readlines()
     dropped = 0
@@ -1004,30 +1048,90 @@ def _drop_raw_rows_aft(path: str) -> int:
                 continue
             if in_data:
                 parts = line.split(",", 3)
-                if len(parts) >= 4 and parts[1].strip() in RAW_SOURCES_AFT:
-                    dropped += 1
-                    continue
+                if len(parts) >= 4:
+                    source = parts[1].strip()
+                    if (drop_raw and source in RAW_SOURCES_AFT) or (
+                        keep is not None and source not in keep
+                    ):
+                        dropped += 1
+                        continue
             fh.write(line)
     os.replace(tmp, path)
     return dropped
 
 
-def _drop_raw_rows_csv(path: str) -> int:
-    """Remove logic/analog rows (Device column LOGIC/ANALOG) from an
-    exported .csv in place. Returns the number of dropped rows."""
+def _filter_rows_csv(
+    path: str, drop_raw: bool = True, keep: Optional[frozenset] = None
+) -> int:
+    """Rewrite an exported .csv in place: drop rows whose Device column
+    is LOGIC/ANALOG/AN (drop_raw) or not listed in `keep` (when given).
+    Returns the number of dropped rows."""
     with open(path, newline="", encoding="utf-8", errors="replace") as src:
         rows = list(csv.reader(src))
     dropped = 0
     tmp = path + ".tmp"
     with open(tmp, "w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        for row in rows:
-            if len(row) >= 4 and row[2].strip() in RAW_DEVICES_CSV:
-                dropped += 1
-                continue
+        for index, row in enumerate(rows):
+            if index and len(row) >= 4:  # row 0 is the header, keep it
+                device = row[2].strip()
+                if (drop_raw and device in RAW_DEVICES_CSV) or (
+                    keep is not None and device not in keep
+                ):
+                    dropped += 1
+                    continue
             writer.writerow(row)
     os.replace(tmp, path)
     return dropped
+
+
+# The raw .csv export encodes non-printable bytes as [HH] hex markers
+# and packet ends as =EoP; the export tool corrects the written file in
+# place (CLI: --no-correct-csv-export disables this).
+_CSV_HEX_BYTE = re.compile(r"\[([0-9A-Fa-f]{1,2})\]")
+
+
+def _decode_csv_export_text(text: str) -> str:
+    """Decode the markers of a raw Active-Pro .csv export: [HH] hex
+    byte markers become the printable character (a double quote is
+    doubled, as CSV requires) or a \\r / \\n / \\xHH escape, and =EoP
+    (end of packet) becomes \\n."""
+
+    def repl(match):
+        value = int(match.group(1), 16)
+        if 0x20 <= value <= 0x7E:
+            char = chr(value)
+            return '""' if char == '"' else char
+        if value == 0x0D:
+            return "\\r"
+        if value == 0x0A:
+            return "\\n"
+        return "\\x%02X" % value
+
+    return _CSV_HEX_BYTE.sub(repl, text).replace("=EoP", "\\n")
+
+
+def _correct_csv_export(local_path: str) -> int:
+    """Correct an exported .csv in place (see _decode_csv_export_text).
+    Returns the number of corrected lines (0 when the file carries no
+    markers or does not exist)."""
+    if not os.path.isfile(local_path):
+        return 0
+    with open(local_path, encoding="utf-8", errors="replace") as fh:
+        content = fh.read()
+    corrected = _decode_csv_export_text(content)
+    if corrected == content:
+        return 0
+    changed = sum(
+        1
+        for line in content.splitlines()
+        if _CSV_HEX_BYTE.search(line) or "=EoP" in line
+    )
+    tmp = local_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(corrected)
+    os.replace(tmp, local_path)
+    return changed
 
 
 def _from_capture_end(value: float, capture_time: float) -> float:
@@ -1190,6 +1294,17 @@ _P_DECODED_ONLY = (
     None,
 )
 
+_P_DEVICE_FILTER = (
+    "device_filter",
+    "string",
+    "comma-separated labels to keep in the export, all other data rows "
+    "are dropped: for .csv the Device column (e.g. 'UART_PACKETS' keeps "
+    "only the packet transaction rows), for .aft the source letter "
+    "(A-D); the written file and a read_back answer are both filtered",
+    False,
+    None,
+)
+
 _P_OFFSET = (
     "offset",
     "integer",
@@ -1206,13 +1321,14 @@ def _write_params() -> Tuple[Any, ...]:
 
 
 def _export_params() -> Tuple[Any, ...]:
-    """Parameters of an export tool (write path + decoded_only)."""
+    """Parameters of an export tool (write path + filters)."""
     return (
         _P_WRITE_PATH,
         _P_READ_BACK,
         _P_MAX_CHARS,
         _P_OFFSET,
         _P_DECODED_ONLY,
+        _P_DEVICE_FILTER,
     )
 
 
@@ -1393,15 +1509,30 @@ API_TOOLS = [
     ),
     _api_tool(
         "search",
-        "Search: find a string in the decoded data forward from the "
-        "current cursor; returns the match timestamp (seconds, rounded "
-        "to 0.1 ms) or NOTFOUND. Consecutive calls enumerate all "
-        "occurrences: the application advances past each match itself, "
-        "and re-finds inside the same decoded item are skipped "
-        "server-side, so one occurrence returns one hit. The returned "
-        "timestamp is rounded, so when setting the cursor manually to "
-        "a returned value, add 0.0001 s to skip that match.",
-        (("text", "string", "string to search for", True, None),),
+        "Search: find a string in the decoded device data (packet "
+        "presenter rows; strings that only appear in raw byte rows "
+        "return NOTFOUND) forward from the current cursor; returns the "
+        "match timestamp (seconds, rounded to 0.1 ms) or NOTFOUND. "
+        "Consecutive calls enumerate all occurrences: the application "
+        "advances past each match itself, and re-finds inside the same "
+        "decoded item are skipped server-side, so one occurrence returns "
+        "one hit. The returned timestamp is rounded, so when setting the "
+        "cursor manually to a returned value, add 0.0001 s to skip that "
+        "match. With 'from', the search starts at that timestamp and the "
+        "cursor is restored afterwards, so repeated or parallel searches "
+        "do not depend on the shared cursor.",
+        (
+            ("text", "string", "string to search for", True, None),
+            (
+                "from",
+                "number",
+                "optional start timestamp in seconds (negative: relative "
+                "to the capture end); the current cursor is restored "
+                "after the search",
+                False,
+                None,
+            ),
+        ),
     ),
     # --- post-capture pipeline ---
     _api_tool(
@@ -1768,7 +1899,9 @@ API_TOOLS = [
     _api_tool(
         "export_between_cursors",
         "ExportBetweenCursors: export the data between the X1/X2 "
-        "cursors (.csv).",
+        "cursors (.csv). The raw export's [HH] hex byte markers and "
+        "=EoP packet end markers are decoded in the written file "
+        "(disable with --no-correct-csv-export).",
         _export_params(),
     ),
     _api_tool(
@@ -1791,7 +1924,10 @@ API_TOOLS = [
         "ReadFile: read back a file on this server machine, e.g. the .csv "
         "written by export_between_cursors or the .png written by "
         "save_screenshot. Text files (.csv, .txt, .log, .md, .json, .aft) "
-        "are returned as text (from char offset, truncated at max_chars). "
+        "are returned as bare text - no wrapper line, so the answer can be "
+        "saved as-is (from char offset, truncated at max_chars; a trailing "
+        "'[read_file: ...]' note is appended only when offset or "
+        "truncation applies). "
         "Other files come "
         "as a one-line header '<path> (<N> bytes, base64):' followed by "
         "standard base64 (RFC 4648: +, /, padding; strip the header "
@@ -1976,6 +2112,25 @@ def run_api_tool(name: str, arguments: Dict[str, Any], api) -> str:
         return api.send_command("ZoomFrom {} {}".format(start, end))
     if name == "search":
         text = str(arguments["text"])
+        from_time = arguments.get("from")
+        if from_time is not None:
+            # stateless search: anchor at 'from', then restore the
+            # shared cursor so parallel calls do not race on it
+            value = float(from_time)
+            if value < 0:
+                value = _from_capture_end(
+                    value, float(api.send_command("GetCaptureTime"))
+                )
+            saved = api.send_command(CURSOR_GET_COMMANDS["current"])
+            api.send_command(
+                "{} {}".format(TIME_TOOLS["set_cursor_current"], value)
+            )
+            try:
+                return api.send_command("Search {}".format(text))
+            finally:
+                api.send_command(
+                    "{} {}".format(TIME_TOOLS["set_cursor_current"], saved)
+                )
         last = getattr(api, "last_search", None)
         seen = last[1] if last is not None and last[0] == text else None
         result = "NOTFOUND"
@@ -2007,23 +2162,71 @@ def run_api_tool(name: str, arguments: Dict[str, Any], api) -> str:
         if name == "open_capture":
             if api.send_command("isCapturing").upper() == "YES":
                 api.send_command("StopCapture")
-        response = api.send_command("{} {}".format(COMMANDS[name], path))
+        command = "{} {}".format(COMMANDS[name], path)
+        response = api.send_command(command)
         if local_path is not None:
             # the app answers OK/YES on success, NO or ERROR... on failure
             answer = response.strip().upper()
             if answer and answer != "NO" and not answer.startswith("ERROR"):
+                if (
+                    name == "export_between_cursors"
+                    and CONF["correct_csv_export"]
+                ):
+                    # correct the raw export markers in the .csv file
+                    changed = _correct_csv_export(local_path)
+                    if changed:
+                        response = "%s (csv corrected: %d lines)" % (
+                            response,
+                            changed,
+                        )
+                if name in CURSOR_RANGE_TOOLS:
+                    # echo the range actually exported (X1/X2 cursors)
+                    x1 = api.send_command(CURSOR_GET_COMMANDS["x1"])
+                    x2 = api.send_command(CURSOR_GET_COMMANDS["x2"])
+                    try:
+                        float(x1)
+                        float(x2)
+                    except ValueError:
+                        pass
+                    else:
+                        response = "{} (exported range X1={}..X2={})".format(
+                            response,
+                            x1,
+                            x2,
+                        )
                 record_written_file(local_path)
-                if arguments.get("decoded_only"):
+                device_filter = arguments.get("device_filter")
+                if arguments.get("decoded_only") or device_filter:
+                    keep = None
+                    if device_filter:
+                        keep = frozenset(
+                            part.strip()
+                            for part in str(device_filter).split(",")
+                            if part.strip()
+                        )
+                    drop_raw = bool(arguments.get("decoded_only"))
                     if name == "export_ai_snapshot":
-                        dropped = _drop_raw_rows_aft(local_path)
+                        dropped = _filter_rows_aft(
+                            local_path, drop_raw=drop_raw, keep=keep
+                        )
+                        kind = "L/AN source"
                     elif name == "export_between_cursors":
-                        dropped = _drop_raw_rows_csv(local_path)
+                        dropped = _filter_rows_csv(
+                            local_path, drop_raw=drop_raw, keep=keep
+                        )
+                        kind = "LOGIC/ANALOG device"
                     else:
                         dropped = 0
+                        kind = ""
                     if dropped:
-                        response = (
-                            "%s (decoded only: dropped %d logic/analog "
-                            "rows)" % (response, dropped)
+                        note = "dropped %d rows" % dropped
+                        if drop_raw:
+                            note += " (%s)" % kind
+                        if keep is not None:
+                            note += " (kept %s)" % ",".join(sorted(keep))
+                        response = "{} (export filtered: {})".format(
+                            response,
+                            note,
                         )
                 if arguments.get("read_back"):
                     return "{}\n{}".format(
@@ -3570,10 +3773,7 @@ def selftest() -> None:
             if tool["name"] in WRITE_PATH_TOOLS:
                 props = tool["inputSchema"]["properties"]
                 assert "read_back" in props and "max_chars" in props
-                if tool["name"] in (
-                    "export_ai_snapshot",
-                    "export_between_cursors",
-                ):
+                if tool["name"] in EXPORT_FILTER_TOOLS:
                     assert "decoded_only" in props
         # decoded_only drops the logic/analog rows from the export
         mini_aft = os.path.join(tmp, "yapd_mini.aft")
@@ -3614,6 +3814,121 @@ def selftest() -> None:
         # .aft export endpoint + the new command mappings
         assert PATH_TOOLS["export_ai_snapshot"] == ".aft"
         assert "export_ai_snapshot" in WRITE_PATH_TOOLS
+        # export tools also take device_filter; search takes from
+        for tool in TOOLS:
+            if tool["name"] in EXPORT_FILTER_TOOLS:
+                assert "device_filter" in tool["inputSchema"]["properties"]
+            if tool["name"] == "search":
+                assert "from" in tool["inputSchema"]["properties"]
+        # device_filter keeps only the listed rows (.csv: Device column)
+        filt_csv = os.path.join(tmp, "yapd_filt.csv")
+        with open(filt_csv, "w", encoding="utf-8") as fh:
+            fh.write(
+                "Seconds, Output, Device, Channel\n"
+                '1.0,"TX=AT+CRESET[D]=EoP","UART_PACKETS","0"\n'
+                '1.1,"0x0D","MyUART B","2"\n'
+                '1.2,"85","LOGIC","7to0"\n'
+            )
+        out = run_api_tool(
+            "export_between_cursors",
+            {"path": filt_csv, "device_filter": "UART_PACKETS"},
+            _OkApi(),
+        )
+        with open(filt_csv, encoding="utf-8") as fh:
+            kept = fh.read()
+        assert "dropped 2" in out and "kept UART_PACKETS" in out
+        assert "UART_PACKETS" in kept and "MyUART B" not in kept
+        assert "LOGIC" not in kept
+        # .aft: device_filter works on the source letter
+        filt_aft = os.path.join(tmp, "yapd_filt.aft")
+        with open(filt_aft, "w", encoding="utf-8") as fh:
+            fh.write(
+                "Active-Pro Firmware Trace (.aft)\n\n---DATA---\n"
+                "timestamp, source, channel, data\n"
+                "1.000000000, B, 2, 0x0D\n"
+                "1.000001000, L, 2, 0\n"
+            )
+        out = run_api_tool(
+            "export_ai_snapshot",
+            {"path": filt_aft, "device_filter": "B"},
+            _OkApi(),
+        )
+        with open(filt_aft, encoding="utf-8") as fh:
+            kept = fh.read()
+        assert "0x0D" in kept and ", L, " not in kept
+        assert "kept B" in out
+
+        # the export answer echoes the X1/X2 range actually exported
+        class _RangeApi(_OkApi):
+            def send_command(self, command, _timeout=10):
+                """Answer fixed cursor positions."""
+                if command == "GetCursorX1":
+                    return "328.5"
+                if command == "GetCursorX2":
+                    return "330.5"
+                return "OK"
+
+        range_csv = os.path.join(tmp, "yapd_range.csv")
+        with open(range_csv, "w", encoding="utf-8") as fh:
+            fh.write("a\n")
+        out = run_api_tool(
+            "export_between_cursors", {"path": range_csv}, _RangeApi()
+        )
+        assert "exported range X1=328.5..X2=330.5" in out
+        # csv export correction: the [HH] hex byte and =EoP markers of
+        # the raw export are decoded in the written file (flag off:
+        # the raw markers stay)
+        fix_csv = os.path.join(tmp, "yapd_fix.csv")
+        with open(fix_csv, "w", encoding="utf-8") as fh:
+            fh.write(
+                "Seconds, Output, Device, Channel\n"
+                '1.0,"TX=AT+CRESET[D]=EoP","UART_PACKETS","0"\n'
+                '1.1,"[41][42][0A]","MyUART B","2"\n'
+            )
+        old_fix = CONF["correct_csv_export"]
+        assert isinstance(old_fix, bool)
+        try:
+            CONF["correct_csv_export"] = True
+            out = run_api_tool(
+                "export_between_cursors", {"path": fix_csv}, _OkApi()
+            )
+            with open(fix_csv, encoding="utf-8") as fh:
+                fixed = fh.read()
+            assert "csv corrected: 2 lines" in out
+            assert "TX=AT+CRESET\\r\\n" in fixed and "[D]" not in fixed
+            assert '"AB\\n"' in fixed
+            with open(fix_csv, "w", encoding="utf-8") as fh:
+                fh.write('1.0,"[0D]","X","0"\n')
+            CONF["correct_csv_export"] = False
+            out = run_api_tool(
+                "export_between_cursors", {"path": fix_csv}, _OkApi()
+            )
+            with open(fix_csv, encoding="utf-8") as fh:
+                assert fh.read() == '1.0,"[0D]","X","0"\n'
+            assert "corrected" not in out
+        finally:
+            CONF["correct_csv_export"] = old_fix
+        # no markers: no rewrite, plain answer
+        plain_csv = os.path.join(tmp, "yapd_plain.csv")
+        with open(plain_csv, "w", encoding="utf-8") as fh:
+            fh.write("a,b\n1,2\n")
+        out = run_api_tool(
+            "export_between_cursors", {"path": plain_csv}, _OkApi()
+        )
+        assert out == "OK"
+        # unit: the decoder itself
+        assert _decode_csv_export_text("[41][0D][0A][07][22]=EoP") == (
+            'A\\r\\n\\x07""\\n'
+        )
+        assert _correct_csv_export(os.path.join(tmp, "yapd_missing.csv")) == 0
+        # read_file returns text bare (no wrapper line); a trailing
+        # note appears only when offset/truncation applies
+        out = run_tool("read_file", {"path": rb_csv})
+        assert out == "a,b\n1,2\n"
+        out = run_tool(
+            "read_file", {"path": rb_csv, "offset": 2, "max_chars": 100}
+        )
+        assert out.startswith("b\n1,2\n") and "[read_file:" in out
 
         class _RecApi:
             def __init__(self):
@@ -3677,9 +3992,37 @@ def selftest() -> None:
         assert run_api_tool("search", {"text": "RDY"}, seq) == "82.4644"
         assert run_api_tool("search", {"text": "RDY"}, seq) == "9175.6"
         assert run_api_tool("search", {"text": "RDY"}, seq) == "NOTFOUND"
+
+        # search with from=: anchored at the given timestamp, and the
+        # shared cursor is restored afterwards (stateless, parallel-safe)
+        class _FromApi(_RecApi):
+            def send_command(self, command, timeout=10):
+                """Answer a fixed current cursor and search hit."""
+                if command == "GetCursorCurrent":
+                    self.sent.append(command)
+                    return "42.0"
+                if command.startswith("Search "):
+                    self.sent.append(command)
+                    return "100.25"
+                return super().send_command(command, timeout)
+
+        fapi = _FromApi()
+        out = run_api_tool("search", {"text": "RDY", "from": 100}, fapi)
+        assert out == "100.25"
+        assert fapi.sent == [
+            "GetCursorCurrent",
+            "SetCursorCurrent 100.0",
+            "Search RDY",
+            "SetCursorCurrent 42.0",
+        ]
         aft = os.path.join(tmp, "yapd_snap.aft")
         run_api_tool("export_ai_snapshot", {"path": aft}, api_rec)
-        assert api_rec.sent[-1].startswith("ExportAISnapshotBetweenCursors ")
+        assert any(
+            c.startswith("ExportAISnapshotBetweenCursors ")
+            for c in api_rec.sent
+        )
+        # the range echo queried the cursors after the export
+        assert api_rec.sent[-2:] == ["GetCursorX1", "GetCursorX2"]
         assert os.path.realpath(aft) in load_written_files()
         run_api_tool("get_cursor", {"cursor": "x1"}, api_rec)
         assert api_rec.sent[-1] == "GetCursorX1"
@@ -3823,7 +4166,9 @@ def selftest() -> None:
         out = run_tool(
             "read_file", {"path": big, "offset": 490, "max_chars": 100}
         )
-        assert "from char 490" in out and out.endswith("0123456789")
+        # text comes back bare, with a trailing note for the offset
+        assert out.startswith("0123456789")
+        assert "from char 490" in out and "[read_file:" in out
         out = run_tool("read_file", {"path": png, "offset": 8})
         assert "from byte 8" in out
         assert (
@@ -4303,7 +4648,7 @@ def main() -> None:
             "  YAPD_MCP_HTTP_PORT, YAPD_MCP_PUBLIC_PORT\n"
             "  YAPD_MCP_SESSION_SECRET, YAPD_MCP_SESSION_TTL_HOURS\n"
             "  YAPD_MCP_STATE_DIR, YAPD_MCP_OAUTH_ISSUER_URL,\n"
-            "  YAPD_MCP_OAUTH_REFRESH_TTL_HOURS"
+            "  YAPD_MCP_OAUTH_REFRESH_TTL_HOURS, YAPD_MCP_CORRECT_CSV_EXPORT"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -4338,6 +4683,23 @@ def main() -> None:
             "Active-Pro application host (default: YAPD_MCP_HOST or"
             " localhost; under WSL, use the Windows host IP)"
         ),
+    )
+    parser.add_argument(
+        "--correct-csv-export",
+        dest="correct_csv_export",
+        action="store_true",
+        default=True,
+        help=(
+            "correct the exported .csv in place: decode the [HH] hex "
+            "byte and =EoP markers (default; YAPD_MCP_CORRECT_CSV_EXPORT"
+            "=0 also disables it)"
+        ),
+    )
+    parser.add_argument(
+        "--no-correct-csv-export",
+        dest="correct_csv_export",
+        action="store_false",
+        help="disable the CSV export content correction",
     )
     parser.add_argument(
         "--remote",
@@ -4387,6 +4749,7 @@ def main() -> None:
         CONF["bind"] = args.bind
     if args.host:
         CONF["app_host"] = args.host
+    CONF["correct_csv_export"] = args.correct_csv_export
     api = ActiveProClient(host=CONF["app_host"])
     port = api.autodetect()
     found = port != api.PORT_BASE or _reachable(api.host, port)

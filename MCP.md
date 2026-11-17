@@ -34,15 +34,30 @@ this document carries only the project-specific material.
   `max_chars` page through large exports (offset counts chars for text,
   bytes for binary); binary answers are base64 behind a one-line
   `<path> (<N> bytes, base64):` header.
-- Server-side post-processing of an export (`decoded_only`) can shrink
-  files massively; run it after the backend write, before `read_back`.
+- Server-side post-processing of an export (`decoded_only`, or
+  `device_filter` to keep only listed rows) can shrink files massively; run
+  it after the backend write, before `read_back`. The answer of a
+  between-cursors export echoes the exported range (`X1=... X2=...`).
+- Text answers of `read_file` are bare content (no prefix wrapper; a
+  trailing `[read_file: ...]` note only when offset/truncation applies);
+  only binary answers carry the one-line base64 header.
+- The raw `ExportBetweenCursors` .csv encodes non-printable bytes as `[HH]`
+  hex markers and packet ends as `=EoP`; the export tool corrects the
+  written file in place (decode to the character or a `\r`/`\n`/ `\xHH`
+  escape) — same correction in `ActiveProApi.py`. On by default;
+  `--no-correct-csv-export` / `YAPD_MCP_CORRECT_CSV_EXPORT=0` disables.
 
 ## Configuration reference
 
 - Env prefix `YAPD_MCP_*`: `HOST` (Active-Pro host), `BIND`, `HTTP_PORT`
   (default 37880), `PUBLIC_PORT`, `STATE_DIR` (default `yapd-mcp-state`),
   `SESSION_SECRET`, `SESSION_TTL_HOURS` (8), `OAUTH_ISSUER_URL`,
-  `OAUTH_REFRESH_TTL_HOURS` (720), `FEEDBACK_FILE`.
+  `OAUTH_REFRESH_TTL_HOURS` (720), `FEEDBACK_FILE`, `CORRECT_CSV_EXPORT`
+  (default on; CLI `--correct-csv-export` / `--no-correct-csv-export`
+  overrides).
+- `search` accepts an optional `from` timestamp: the search starts there
+  and the shared cursor is restored afterwards (stateless, parallel-safe);
+  it scans the decoded device (packet presenter) rows, not raw bytes.
 - `POST /login` returns `{"token", ...}` — the field is `token`, not
   `access_token`.
 - `--remote NAME` prints and starts the
